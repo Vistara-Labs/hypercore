@@ -30,7 +30,7 @@ func (*startConfig) Error() string {
 func (a *app) Reconcile(ctx context.Context, vmid models.VMID) error {
 	logger := log.GetLogger(ctx).WithField("action", "reconcile")
 
-	logger.Infof("Creating microvm in reconcile %v\n", vmid)
+	logger.Debugf("Creating microvm in reconcile %v\n", vmid)
 
 	vm, err := a.ports.Repo.Get(ctx, ports.RepositoryGetOptions{
 		Name:      vmid.Name(),

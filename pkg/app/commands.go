@@ -15,7 +15,6 @@ import (
 // Create implements App. commands.go CreateMicroVM
 func (a *app) Create(ctx context.Context, vm *models.MicroVM) (*models.MicroVM, error) {
 	logger := log.GetLogger(ctx).WithField("vm", "app")
-	logger.Info("Creating microvm in commands create")
 
 	// TODO: add validation here.
 

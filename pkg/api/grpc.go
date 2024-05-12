@@ -26,25 +26,21 @@ func (s *server) Create(
 	ctx context.Context, req *vm1.CreateMicroVMRequest,
 ) (*vm1.CreateMicroVMResponse, error) {
 	logger := log.GetLogger(ctx)
-	logger.Info("Converting request to model")
+	logger.Debug("Converting request to model")
 
 	if req == nil || req.Microvm == nil {
 		return nil, fmt.Errorf("invalid request")
 	}
 
-	logger.Infof("req microvm: %v\n", req.Microvm)
 	vmSpec, err := convertMicroVMToModel(req.Microvm)
 	if err != nil {
 		return nil, fmt.Errorf("converting request to model: %w", err)
 	}
 
-	logger.Infof("Creating microvm %v\n", vmSpec)
 	createdVm, err := s.commandSvc.Create(ctx, vmSpec)
 	if err != nil {
 		return nil, fmt.Errorf("creating microvm: %w", err)
 	}
-
-	logger.Info("Converting model to response")
 
 	resp := &vm1.CreateMicroVMResponse{
 		Microvm: &types.MicroVM{

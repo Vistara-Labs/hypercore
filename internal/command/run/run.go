@@ -39,12 +39,12 @@ import (
 func NewCommand(cfg *config.Config) (*cobra.Command, error) {
 	cmd := &cobra.Command{
 		Use:   "run",
-		Short: "Run the Vistara node",
+		Short: "Run the Hypercore Vistara node",
 		PreRunE: func(c *cobra.Command, _ []string) error {
 			flags.BindCommandToViper(c)
 
-			logger := log.GetLogger(c.Context())
-			logger.Infof("Starting Vistara node")
+			// logger := log.GetLogger(c.Context())
+			// logger.Infof("Starting Vistara node")
 
 			return nil
 		},
@@ -68,17 +68,15 @@ func serve(ctx context.Context, cfg *config.Config) error {
 
 	// Create a context that will be canceled when the user sends a SIGINT
 	ports, err := InitializePorts(cfg)
-	logger.Infof("Initialized ports %v", ports)
+
 	if err != nil {
 		return err
 	}
 	app := inject.InitializeApp(cfg, ports)
-	println(app)
-	logger.Infof("Initialized app %v", app)
 
 	// initialize gRPC server with commandSvc an instance of ports.MicroVMService
 	vmGRPCService := grpcapi.NewServer(app)
-	logger.Infof("Initialized gRPC server %v", vmGRPCService)
+	// logger.Infof("Initialized gRPC server %v", vmGRPCService)
 
 	serverOpts, _ := generateOpts(ctx, cfg)
 
@@ -172,7 +170,7 @@ func runProcessors(ctx context.Context, cfg *config.Config) error {
 
 	// Create a context that will be canceled when the user sends a SIGINT
 	ports, err := InitializePorts(cfg)
-	logger.Info("Initialized ports %v", ports)
+
 	if err != nil {
 		return err
 	}
@@ -197,8 +195,7 @@ func InitializePorts(cfg *config.Config) (*ports.Collection, error) {
 	config2 := containerdConfig(cfg)
 
 	microVMRepository, err := containerd.NewMicroVMRepository(config2)
-	fmt.Printf("config2: %v\n", config2)
-	fmt.Printf("microVMRepository: %v\n\n", microVMRepository)
+
 	if err != nil {
 		return nil, err
 	}

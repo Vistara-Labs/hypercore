@@ -53,5 +53,5 @@ func deleteLease(ctx context.Context, owner string, client Client) error {
 }
 
 func getLeaseNameForOwner(owner string) string {
-	return fmt.Sprintf("flintlock/%s", owner)
+	return fmt.Sprintf("hypercore/%s", owner)
 }

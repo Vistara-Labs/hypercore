@@ -160,9 +160,7 @@ func (p *VMProcessor) processQueue(ctx context.Context) bool {
 		logger.WithError(err).Error("error parsing vmid")
 		return true
 	}
-	logger.Debug("vmid %w", vmid)
 
-	p.commandSvc.Reconcile(ctx, *vmid)
 	err = p.commandSvc.Reconcile(ctx, *vmid)
 
 	if err != nil {

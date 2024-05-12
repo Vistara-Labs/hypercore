@@ -38,13 +38,7 @@ func (es *eventService) Publish(ctx context.Context, topic string, eventToPublis
 	namespaceCtx := namespaces.WithNamespace(ctx, es.cfg.Namespace)
 	ctrEventSrv := es.client.EventService()
 
-	println("namespaceCtx: ", namespaceCtx, es.cfg.Namespace)
-	println("topic: ", topic)
-	println(eventToPublish)
-	fmt.Printf("Type of eventToPublish: %T\n", eventToPublish)
-	fmt.Printf("Calling Publish: topic=%s, event=%v\n", topic, eventToPublish)
-	fmt.Printf("namespaceCtx sd : %v\n", namespaceCtx)
-
+	// Check if the event is of the correct type
 	eventType, ok := eventToPublish.(*events.MicroVMSpecCreated)
 	if !ok {
 		return fmt.Errorf("eventToPublish is not of type *events.MicroVMSpecCreated")
@@ -99,15 +93,12 @@ func (es *eventService) subscribe(ctx context.Context,
 	ch = evtCh
 	namespaceCtx := namespaces.WithNamespace(ctx, es.cfg.Namespace)
 
-	fmt.Printf("namespaceCtx in first subscribe : %v\n", namespaceCtx)
-	fmt.Printf("filters: %v\n", filters)
 	if len(filters) == 0 {
 		ctrEvents, ctrErrs = es.client.Subscribe(namespaceCtx)
 	} else {
 		ctrEvents, ctrErrs = es.client.Subscribe(namespaceCtx, filters...)
 	}
 
-	fmt.Printf("ctrEvents: %v\n", ctrEvents)
 	go func() {
 		defer close(evtCh)
 
@@ -120,9 +111,8 @@ func (es *eventService) subscribe(ctx context.Context,
 
 				return
 			case ctrEvt := <-ctrEvents:
-				fmt.Printf("ctrEvt: %v\n", ctrEvt)
 				converted, err := convertCtrEventEnvelope(ctrEvt)
-				fmt.Printf("converted: %v\n", converted)
+
 				if err != nil {
 					evtErrCh <- fmt.Errorf("converting containerd event envelope: %w", err)
 				}

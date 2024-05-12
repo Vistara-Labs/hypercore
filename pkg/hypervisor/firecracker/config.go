@@ -8,6 +8,7 @@ import (
 	"vistara-node/pkg/models"
 )
 
+// taken from flintlock: https://github.com/weaveworks-liquidmetal/flintlock
 const (
 	cloudInitNetVersion = 2
 )
@@ -65,35 +66,35 @@ func WithMicroVM(vm *models.MicroVM) ConfigOption {
 
 		cfg.BlockDevices = []BlockDeviceConfig{}
 
-		rootVolumeStatus, volumeStatusFound := vm.Status.Volumes[vm.Spec.RootVolume.ID]
-		if !volumeStatusFound {
-			return errors.NewVolumeNotMounted(vm.Spec.RootVolume.ID)
-		}
+		// rootVolumeStatus, volumeStatusFound := vm.Status.Volumes[vm.Spec.RootVolume.ID]
+		// if !volumeStatusFound {
+		// 	return errors.NewVolumeNotMounted(vm.Spec.RootVolume.ID)
+		// }
 
 		cfg.BlockDevices = append(cfg.BlockDevices, BlockDeviceConfig{
 			ID:           vm.Spec.RootVolume.ID,
 			IsReadOnly:   vm.Spec.RootVolume.IsReadOnly,
 			IsRootDevice: true,
-			PathOnHost:   rootVolumeStatus.Mount.Source,
-			CacheType:    CacheTypeUnsafe,
+			// PathOnHost:   rootVolumeStatus.Mount.Source,
+			CacheType: CacheTypeUnsafe,
 		})
 
-		for _, vol := range vm.Spec.AdditionalVolumes {
-			status, ok := vm.Status.Volumes[vol.ID]
-			if !ok {
-				return errors.NewVolumeNotMounted(vol.ID)
-			}
+		// for _, vol := range vm.Spec.AdditionalVolumes {
+		// 	status, ok := vm.Status.Volumes[vol.ID]
+		// 	if !ok {
+		// 		return errors.NewVolumeNotMounted(vol.ID)
+		// 	}
 
-			cfg.BlockDevices = append(cfg.BlockDevices, BlockDeviceConfig{
-				ID:           vol.ID,
-				IsReadOnly:   vol.IsReadOnly,
-				IsRootDevice: false,
-				PathOnHost:   status.Mount.Source,
-				// Partuuid: ,
-				// RateLimiter: ,
-				CacheType: CacheTypeUnsafe,
-			})
-		}
+		// 	cfg.BlockDevices = append(cfg.BlockDevices, BlockDeviceConfig{
+		// 		ID:           vol.ID,
+		// 		IsReadOnly:   vol.IsReadOnly,
+		// 		IsRootDevice: false,
+		// 		PathOnHost:   status.Mount.Source,
+		// 		// Partuuid: ,
+		// 		// RateLimiter: ,
+		// 		CacheType: CacheTypeUnsafe,
+		// 	})
+		// }
 
 		kernelCmdLine := DefaultKernelCmdLine()
 
@@ -112,8 +113,8 @@ func WithMicroVM(vm *models.MicroVM) ConfigOption {
 
 		kernelArgs := kernelCmdLine.String()
 		cfg.BootSource = BootSourceConfig{
-			KernelImagePage: fmt.Sprintf("%s/%s", vm.Status.KernelMount.Source, vm.Spec.Kernel.Filename),
-			BootArgs:        &kernelArgs,
+			// KernelImagePage: fmt.Sprintf("%s/%s", vm.Status.KernelMount.Source, vm.Spec.Kernel.Filename),
+			BootArgs: &kernelArgs,
 		}
 
 		if vm.Spec.Initrd != nil {
