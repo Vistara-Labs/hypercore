@@ -12,7 +12,9 @@ import (
 	"vistara-node/pkg/log"
 	"vistara-node/pkg/models"
 	"vistara-node/pkg/ports"
+	"vistara-node/pkg/network"
 
+	"github.com/firecracker-microvm/firecracker-go-sdk"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 )
@@ -63,10 +65,28 @@ func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM) erro
 
 	vmState := NewState(vm.ID, f.config.StateRoot, f.fs)
 
-	logger.Debugf("ensuring state dir %v", vmState)
 	if err := f.ensureState(vmState); err != nil {
 		return fmt.Errorf("ensuring state dir: %w", err)
 	}
+
+	// add network interfaces
+	for i := range vm.Spec.NetworkInterfaces {
+		iface := vm.Spec.NetworkInterfaces[i]
+
+		_, ok := vm.Status.NetworkInterfaces[iface.GuestDeviceName]
+		if !ok {
+			status := &models.NetworkInterfaceStatus{}
+
+			vm.Status.NetworkInterfaces = make(map[string]*models.NetworkInterfaceStatus)
+			vm.Status.NetworkInterfaces[iface.GuestDeviceName] = status
+
+			nface := network.NewNetworkInterface(&vm.ID, &iface, status, f.networkSvc)
+			if err := nface.Create(ctx); err != nil {
+				return fmt.Errorf("creating network interface %w", err)
+			}
+		}
+	}
+
 
 	config, err := CreateConfig(WithMicroVM(vm), WithState(vmState))
 	if err != nil {
@@ -91,12 +111,14 @@ func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM) erro
 	// 	WithBin(f.config.FirecrackerBin).
 	// 	WithArgs(args).
 	// 	Build(context.TODO())
-	cmd := exec.Command(f.config.FirecrackerBin, args...)
-	logger.Debugf("starting firecracker process %s %v \n%v\n", f.config.FirecrackerBin, args, cmd)
-	logger.Debugf("stdout: %s", vmState.StdoutPath())
+	// cmd := exec.Command(f.config.FirecrackerBin, args...)
+
+	cmd := firecracker.VMCommandBuilder{}.
+		WithBin(f.config.FirecrackerBin).
+		WithArgs(args).
+		Build(context.TODO()) //nolint: contextcheck // Intentional.
 
 	proc, err := f.startMicroVM(cmd, vmState, f.config.RunDetached)
-	logger.Debugf("started firecracker process %v", proc)
 
 	if err != nil {
 		return fmt.Errorf("starting firecracker process %w", err)

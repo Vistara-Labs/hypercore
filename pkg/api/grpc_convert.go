@@ -82,7 +82,7 @@ func convertMicroVMToModel(spec *types.MicroVMSpec) (*models.MicroVM, error) {
 func convertNetworkInterfaceToModel(netInt *types.NetworkInterface) *models.NetworkInterface {
 	converted := &models.NetworkInterface{
 		GuestDeviceName:       netInt.DeviceId,
-		AllowMetadataRequests: false,
+		AllowMetadataRequests: true,
 	}
 
 	if netInt.GuestMac != nil {

@@ -59,6 +59,11 @@ func NewCommand(cfg *config.Config) (*cobra.Command, error) {
 	cmdflags.AddDebugFlagsToCommand(cmd, cfg)
 	cmdflags.AddGWServerFlagsToCommand(cmd, cfg)
 
+	// add network flags to the run command
+	if err := cmdflags.AddNetworkFlagsToCommand(cmd, cfg); err != nil {
+		return nil, fmt.Errorf("adding network flags to run command: %w", err)
+	}
+
 	return cmd, nil
 }
 

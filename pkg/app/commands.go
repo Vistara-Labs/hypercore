@@ -12,6 +12,11 @@ import (
 	"vistara-node/pkg/ports"
 )
 
+const (
+	MetadataInterfaceName = "flbr0" // "eth0"
+        // MetadataInterfaceName = "eth0"
+)
+
 // Create implements App. commands.go CreateMicroVM
 func (a *app) Create(ctx context.Context, vm *models.MicroVM) (*models.MicroVM, error) {
 	logger := log.GetLogger(ctx).WithField("vm", "app")
@@ -34,6 +39,7 @@ func (a *app) Create(ctx context.Context, vm *models.MicroVM) (*models.MicroVM, 
 	if vm.Spec.Provider == "" {
 		vm.Spec.Provider = a.cfg.DefaultProvider
 	}
+	a.addMetadataInterface(vm)
 
 	logger.Infof("Hypervisor provider: %s", vm.Spec.Provider)
 
@@ -80,4 +86,33 @@ func (*app) Metrics(ctx context.Context, id models.VMID) (ports.MachineMetrics, 
 // State implements App.
 func (*app) State(ctx context.Context, id string) (ports.MicroVMState, error) {
 	panic("unimplemented")
+}
+
+
+func (a *app) addMetadataInterface(mvm *models.MicroVM) {
+	for i := range mvm.Spec.NetworkInterfaces {
+		netInt := mvm.Spec.NetworkInterfaces[i]
+
+		if netInt.GuestDeviceName == MetadataInterfaceName {
+			return
+		}
+	}
+
+	interfaces := []models.NetworkInterface{
+		{
+			GuestDeviceName:       MetadataInterfaceName,
+			Type:                  models.IfaceTypeTap,
+			AllowMetadataRequests: true,
+			GuestMAC:              "AA:FF:00:00:00:01",
+			StaticAddress: &models.StaticAddress{
+				Address: "169.254.0.1/16",
+			},
+		},
+	}
+	interfaces = append(interfaces, mvm.Spec.NetworkInterfaces...)
+	mvm.Spec.NetworkInterfaces = interfaces
+
+	fmt.Printf(" here mvm.Spec.NetworkInterfaces: %v", mvm.Spec.NetworkInterfaces)
+
+	return
 }

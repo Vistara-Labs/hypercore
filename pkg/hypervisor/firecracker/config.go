@@ -51,10 +51,13 @@ func WithMicroVM(vm *models.MicroVM) ConfigOption {
 			}
 
 			fcInt := createNetworkIface(&iface, status)
+
 			cfg.NetDevices = append(cfg.NetDevices, *fcInt)
 			if iface.AllowMetadataRequests {
 				mmdsNetDevices = append(mmdsNetDevices, fcInt.IfaceID)
 			}
+			// fmt.Printf("cfg.NetDevices: %v\n", cfg.NetDevices)
+
 		}
 
 		cfg.Mmds = &MMDSConfig{
@@ -75,7 +78,9 @@ func WithMicroVM(vm *models.MicroVM) ConfigOption {
 			ID:           vm.Spec.RootVolume.ID,
 			IsReadOnly:   vm.Spec.RootVolume.IsReadOnly,
 			IsRootDevice: true,
-			// PathOnHost:   rootVolumeStatus.Mount.Source,
+			// PathOnHost:   rootVolumeStatus.Mount.Source, hardcode temporarily
+			PathOnHost: "/root/flintlock/hello-rootfs.ext4",
+
 			CacheType: CacheTypeUnsafe,
 		})
 
@@ -102,6 +107,10 @@ func WithMicroVM(vm *models.MicroVM) ConfigOption {
 			kernelCmdLine.Set(key, value)
 		}
 
+		// fmt.Printf("vm.Spec.Kernel.AddNetworkConfig: %v\n", vm.Spec.Kernel.AddNetworkConfig)
+		// fmt.Printf("kernelCmdLine: %v\n", kernelCmdLine)
+
+
 		if vm.Spec.Kernel.AddNetworkConfig {
 			networkConfig, err := shared.GenerateNetworkConfig(vm)
 			if err != nil {
@@ -112,8 +121,12 @@ func WithMicroVM(vm *models.MicroVM) ConfigOption {
 		}
 
 		kernelArgs := kernelCmdLine.String()
+
 		cfg.BootSource = BootSourceConfig{
-			// KernelImagePage: fmt.Sprintf("%s/%s", vm.Status.KernelMount.Source, vm.Spec.Kernel.Filename),
+//			KernelImagePage: fmt.Sprintf("%s/%s", vm.Status.KernelMount.Source, vm.Spec.Kernel.Filename),
+			// temp hardcode
+			KernelImagePage: "/root/flintlock/hello-vmlinux.bin",
+
 			BootArgs: &kernelArgs,
 		}
 
@@ -154,6 +167,12 @@ func WithMicroVM(vm *models.MicroVM) ConfigOption {
 // Read more:
 // https://www.kernel.org/doc/html/v5.15/admin-guide/kernel-parameters.html
 func DefaultKernelCmdLine() shared.KernelCmdLine {
+	// TODO remove
+	tapIP := "169.254.0.22"
+	fcIP := "169.254.0.21"
+	maskLong := "255.255.255.252"
+
+
 	return shared.KernelCmdLine{
 		"console":       "ttyS0",
 		"reboot":        "k",
@@ -164,6 +183,7 @@ func DefaultKernelCmdLine() shared.KernelCmdLine {
 		"i8042.nopnp":   "",
 		"i8042.dumbkbd": "",
 		"ds":            "nocloud-net;s=http://169.254.169.254/latest/",
+		"ip":            fmt.Sprintf("%s::%s:%s::flbr0:off", fcIP, tapIP, maskLong),
 	}
 }
 

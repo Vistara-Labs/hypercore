@@ -35,6 +35,7 @@ func GenerateNetworkConfig(vm *models.MicroVM) (string, error) {
 		iface := vm.Spec.NetworkInterfaces[i]
 
 		status, ok := vm.Status.NetworkInterfaces[iface.GuestDeviceName]
+
 		if !ok {
 			return "", errors.NewNetworkInterfaceStatusMissing(iface.GuestDeviceName)
 		}
@@ -56,6 +57,8 @@ func GenerateNetworkConfig(vm *models.MicroVM) (string, error) {
 
 		if iface.StaticAddress != nil {
 			if err := configureStaticEthernet(&iface, eth); err != nil {
+				fmt.Printf("\nconfiguring static ethernet err is : %v\n", err)
+
 				return "", fmt.Errorf("configuring static ethernet address: %w", err)
 			}
 		}
@@ -64,6 +67,7 @@ func GenerateNetworkConfig(vm *models.MicroVM) (string, error) {
 	}
 
 	nd, err := yaml.Marshal(netConf)
+
 	if err != nil {
 		return "", fmt.Errorf("marshalling network data: %w", err)
 	}
