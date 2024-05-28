@@ -94,6 +94,9 @@ grpcurl -plaintext -H "tmptmp: 1" -d '{
 
 ### Project Structure
 
+This repo is inspired by the Flintlock project. https://github.com/weaveworks-liquidmetal/flintlock
+Vistara Hypercore reuses a lot of code from the Flintlock project and create hypervisor abstraction interface and refactored the code to make it more modular and extensible.
+
 Below is the project structure detailing major components and their organization within the repository:
 
 ```plaintext
@@ -139,6 +142,7 @@ Contributions are what make the open-source community such an amazing place to l
 4. Push to the Branch (git push origin feature/hypespacecore)
 5. Open a Pull Request
 
-Acknowledgments
-Inspired by and builds upon concepts from the Flintlock project.
-Thanks to all contributors who participate in this project.
+### Acknowledgments
+
+1. Inspired by and builds upon concepts from the Flintlock project.
+2. Thanks to all contributors who participate in this project.
