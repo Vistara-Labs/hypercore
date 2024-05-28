@@ -13,8 +13,7 @@ import (
 )
 
 const (
-	MetadataInterfaceName = "flbr0" // "eth0"
-        // MetadataInterfaceName = "eth0"
+	MetadataInterfaceName = "eth0"
 )
 
 // Create implements App. commands.go CreateMicroVM
@@ -92,7 +91,6 @@ func (*app) State(ctx context.Context, id string) (ports.MicroVMState, error) {
 func (a *app) addMetadataInterface(mvm *models.MicroVM) {
 	for i := range mvm.Spec.NetworkInterfaces {
 		netInt := mvm.Spec.NetworkInterfaces[i]
-
 		if netInt.GuestDeviceName == MetadataInterfaceName {
 			return
 		}
@@ -111,8 +109,6 @@ func (a *app) addMetadataInterface(mvm *models.MicroVM) {
 	}
 	interfaces = append(interfaces, mvm.Spec.NetworkInterfaces...)
 	mvm.Spec.NetworkInterfaces = interfaces
-
-	fmt.Printf(" here mvm.Spec.NetworkInterfaces: %v", mvm.Spec.NetworkInterfaces)
 
 	return
 }

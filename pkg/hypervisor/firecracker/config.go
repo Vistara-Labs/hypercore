@@ -79,7 +79,7 @@ func WithMicroVM(vm *models.MicroVM) ConfigOption {
 			IsReadOnly:   vm.Spec.RootVolume.IsReadOnly,
 			IsRootDevice: true,
 			// PathOnHost:   rootVolumeStatus.Mount.Source, hardcode temporarily
-			PathOnHost: "/root/flintlock/hello-rootfs.ext4",
+			PathOnHost: "/root/firecracker-demo/resources/rootfs.ext4",
 
 			CacheType: CacheTypeUnsafe,
 		})
@@ -125,7 +125,7 @@ func WithMicroVM(vm *models.MicroVM) ConfigOption {
 		cfg.BootSource = BootSourceConfig{
 //			KernelImagePage: fmt.Sprintf("%s/%s", vm.Status.KernelMount.Source, vm.Spec.Kernel.Filename),
 			// temp hardcode
-			KernelImagePage: "/root/flintlock/hello-vmlinux.bin",
+			KernelImagePage: "/root/firecracker-demo/resources/vmlinux",
 
 			BootArgs: &kernelArgs,
 		}
@@ -182,8 +182,8 @@ func DefaultKernelCmdLine() shared.KernelCmdLine {
 		"i8042.nomux":   "",
 		"i8042.nopnp":   "",
 		"i8042.dumbkbd": "",
-		"ds":            "nocloud-net;s=http://169.254.169.254/latest/",
-		"ip":            fmt.Sprintf("%s::%s:%s::flbr0:off", fcIP, tapIP, maskLong),
+		// "ds":            "nocloud-net;s=http://169.254.169.254/latest/",
+		"ip":            fmt.Sprintf("%s::%s:%s::eth0:off", fcIP, tapIP, maskLong),
 	}
 }
 
