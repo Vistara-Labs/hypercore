@@ -69,20 +69,14 @@ func WithMicroVM(vm *models.MicroVM) ConfigOption {
 
 		cfg.BlockDevices = []BlockDeviceConfig{}
 
-		// rootVolumeStatus, volumeStatusFound := vm.Status.Volumes[vm.Spec.RootVolume.ID]
-		// if !volumeStatusFound {
-		// 	return errors.NewVolumeNotMounted(vm.Spec.RootVolume.ID)
-		// }
-
-		cfg.BlockDevices = append(cfg.BlockDevices, BlockDeviceConfig{
+		blockDeviceCfg := BlockDeviceConfig{
 			ID:           vm.Spec.RootVolume.ID,
 			IsReadOnly:   vm.Spec.RootVolume.IsReadOnly,
 			IsRootDevice: true,
-			// PathOnHost:   rootVolumeStatus.Mount.Source, hardcode temporarily
-			PathOnHost: "/root/firecracker-demo/resources/rootfs.ext4",
-
-			CacheType: CacheTypeUnsafe,
-		})
+			PathOnHost:   vm.Spec.RootVolume.ID,
+			CacheType:    CacheTypeUnsafe,
+		}
+		cfg.BlockDevices = append(cfg.BlockDevices, blockDeviceCfg)
 
 		// for _, vol := range vm.Spec.AdditionalVolumes {
 		// 	status, ok := vm.Status.Volumes[vol.ID]
@@ -110,7 +104,6 @@ func WithMicroVM(vm *models.MicroVM) ConfigOption {
 		// fmt.Printf("vm.Spec.Kernel.AddNetworkConfig: %v\n", vm.Spec.Kernel.AddNetworkConfig)
 		// fmt.Printf("kernelCmdLine: %v\n", kernelCmdLine)
 
-
 		if vm.Spec.Kernel.AddNetworkConfig {
 			networkConfig, err := shared.GenerateNetworkConfig(vm)
 			if err != nil {
@@ -122,13 +115,11 @@ func WithMicroVM(vm *models.MicroVM) ConfigOption {
 
 		kernelArgs := kernelCmdLine.String()
 
-		cfg.BootSource = BootSourceConfig{
-//			KernelImagePage: fmt.Sprintf("%s/%s", vm.Status.KernelMount.Source, vm.Spec.Kernel.Filename),
-			// temp hardcode
-			KernelImagePage: "/root/firecracker-demo/resources/vmlinux",
-
-			BootArgs: &kernelArgs,
+		bootSourceConfig := BootSourceConfig{
+			KernelImagePage: vm.Spec.Kernel.Filename,
+			BootArgs:        &kernelArgs,
 		}
+		cfg.BootSource = bootSourceConfig
 
 		if vm.Spec.Initrd != nil {
 			initrdPath := fmt.Sprintf("%s/%s", vm.Status.InitrdMount.Source, vm.Spec.Initrd.Filename)
@@ -172,7 +163,6 @@ func DefaultKernelCmdLine() shared.KernelCmdLine {
 	fcIP := "169.254.0.21"
 	maskLong := "255.255.255.252"
 
-
 	return shared.KernelCmdLine{
 		"console":       "ttyS0",
 		"reboot":        "k",
@@ -183,7 +173,7 @@ func DefaultKernelCmdLine() shared.KernelCmdLine {
 		"i8042.nopnp":   "",
 		"i8042.dumbkbd": "",
 		// "ds":            "nocloud-net;s=http://169.254.169.254/latest/",
-		"ip":            fmt.Sprintf("%s::%s:%s::eth0:off", fcIP, tapIP, maskLong),
+		"ip": fmt.Sprintf("%s::%s:%s::eth0:off", fcIP, tapIP, maskLong),
 	}
 }
 
