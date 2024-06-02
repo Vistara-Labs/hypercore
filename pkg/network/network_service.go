@@ -5,12 +5,14 @@ import (
 	ierror "errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"vistara-node/pkg/errors"
 	"vistara-node/pkg/log"
 	"vistara-node/pkg/models"
 	"vistara-node/pkg/ports"
 
+	sysctl "github.com/lorenzosaino/go-sysctl"
 	"github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
 )
@@ -121,12 +123,38 @@ func (n *networkService) IfaceCreate(ctx context.Context, input ports.IfaceCreat
 
 	logger.Debugf("created interface with mac %s", macIf.Attrs().HardwareAddr.String())
 
-	if input.Type == models.IfaceTypeTap && input.Attach {
-		if err := netlink.LinkSetMaster(macIf, parentLink); err != nil {
-			return nil, fmt.Errorf("setting master for %s to %s: %w", macIf.Attrs().Name, parentLink.Attrs().Name, err)
+	if input.Type == models.IfaceTypeTap {
+		deviceNameToIndex, err := strconv.Atoi(strings.ReplaceAll(input.DeviceName, "hypercore-", ""))
+		if err != nil {
+			return nil, fmt.Errorf("deviceName %s invalid", input.DeviceName)
 		}
 
-		logger.Debugf("added interface %s to bridge %s", macIf.Attrs().Name, parentLink.Attrs().Name)
+		addr, err := netlink.ParseAddr(GetTapDetails(deviceNameToIndex).TapIp.String() + "/30")
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse TAP IP for index %d: %w", deviceNameToIndex, err)
+		}
+
+		if err = netlink.AddrAdd(link, addr); err != nil {
+			return nil, fmt.Errorf("failed to add address to TAP device: %w", err)
+		}
+
+		err = sysctl.Set(fmt.Sprintf("net.ipv4.conf.%s.proxy_arp", link.Attrs().Name), "1")
+		if err != nil {
+			return nil, fmt.Errorf("failed to enable proxy_arp: %w", err)
+		}
+
+		err = sysctl.Set(fmt.Sprintf("net.ipv6.conf.%s.disable_ipv6", link.Attrs().Name), "1")
+		if err != nil {
+			return nil, fmt.Errorf("failed to enable disable_ipv6: %w", err)
+		}
+
+		if input.Attach {
+			if err := netlink.LinkSetMaster(macIf, parentLink); err != nil {
+				return nil, fmt.Errorf("setting master for %s to %s: %w", macIf.Attrs().Name, parentLink.Attrs().Name, err)
+			}
+
+			logger.Debugf("added interface %s to bridge %s", macIf.Attrs().Name, parentLink.Attrs().Name)
+		}
 	}
 
 	return &ports.IfaceDetails{

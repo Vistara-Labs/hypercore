@@ -6,7 +6,9 @@ require (
 	github.com/containerd/typeurl/v2 v2.1.1
 	github.com/diskfs/go-diskfs v1.4.0
 	github.com/docker/go-units v0.5.0
+	github.com/firecracker-microvm/firecracker-go-sdk v1.0.0
 	github.com/google/go-cmp v0.6.0
+	github.com/lorenzosaino/go-sysctl v0.3.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc3
 	github.com/prometheus/client_golang v1.14.0
@@ -19,6 +21,7 @@ require (
 require (
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230811130428-ced1acdcaa24 // indirect
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20230306123547-8075edf89bb0 // indirect
+	github.com/BurntSushi/toml v1.1.0 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/Microsoft/hcsshim v0.11.4 // indirect
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
@@ -36,7 +39,6 @@ require (
 	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect
 	github.com/elliotwutingfeng/asciiset v0.0.0-20230602022725-51bbb787efab // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
-	github.com/firecracker-microvm/firecracker-go-sdk v1.0.0 // indirect
 	github.com/go-logr/logr v1.3.0 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/analysis v0.21.2 // indirect
@@ -82,6 +84,8 @@ require (
 	go.opentelemetry.io/otel v1.19.0 // indirect
 	go.opentelemetry.io/otel/metric v1.19.0 // indirect
 	go.opentelemetry.io/otel/trace v1.19.0 // indirect
+	golang.org/x/exp/typeparams v0.0.0-20220613132600-b0d781184e0d // indirect
+	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/mod v0.14.0 // indirect
 	golang.org/x/net v0.20.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect
@@ -90,6 +94,7 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240125205218-1f4bbc51befe // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/djherbis/times.v1 v1.3.0 // indirect
+	honnef.co/go/tools v0.3.2 // indirect
 )
 
 require (

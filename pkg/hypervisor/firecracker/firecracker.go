@@ -11,8 +11,8 @@ import (
 	"vistara-node/pkg/hypervisor/shared"
 	"vistara-node/pkg/log"
 	"vistara-node/pkg/models"
-	"vistara-node/pkg/ports"
 	"vistara-node/pkg/network"
+	"vistara-node/pkg/ports"
 
 	"github.com/firecracker-microvm/firecracker-go-sdk"
 	"github.com/sirupsen/logrus"
@@ -86,7 +86,6 @@ func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM) erro
 			}
 		}
 	}
-
 
 	config, err := CreateConfig(WithMicroVM(vm), WithState(vmState))
 	if err != nil {

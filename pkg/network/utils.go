@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"vistara-node/pkg/models"
 
@@ -21,12 +22,26 @@ const (
 	macvtapPrefix = "vtap"
 )
 
+type TapDetails struct {
+	VmIp  net.IP
+	TapIp net.IP
+	Mask  net.IP
+}
+
+func GetTapDetails(index int) TapDetails {
+	return TapDetails{
+		VmIp:  net.IPv4(169, 254, byte(((4*index)+1)/256), byte(((4*index)+1)%256)),
+		TapIp: net.IPv4(169, 254, byte(((4*index)+2)/256), byte(((4*index)+2)%256)),
+		Mask:  net.IPv4(255, 255, 255, 252),
+	}
+}
+
 func NewIfaceName(ifaceType models.IfaceType) (string, error) {
 	var devPrefix string
 
 	switch ifaceType {
 	case models.IfaceTypeTap:
-		devPrefix = fmt.Sprintf("%s%s", prefix, tapPrefix)
+		return "hypercore-0", nil
 	case models.IfaceTypeMacvtap:
 		devPrefix = fmt.Sprintf("%s%s", prefix, macvtapPrefix)
 	case models.IfaceTypeUnsupported:

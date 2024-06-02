@@ -6,6 +6,7 @@ import (
 	"vistara-node/pkg/errors"
 	"vistara-node/pkg/hypervisor/shared"
 	"vistara-node/pkg/models"
+	"vistara-node/pkg/network"
 )
 
 // taken from flintlock: https://github.com/weaveworks-liquidmetal/flintlock
@@ -57,7 +58,6 @@ func WithMicroVM(vm *models.MicroVM) ConfigOption {
 				mmdsNetDevices = append(mmdsNetDevices, fcInt.IfaceID)
 			}
 			// fmt.Printf("cfg.NetDevices: %v\n", cfg.NetDevices)
-
 		}
 
 		cfg.Mmds = &MMDSConfig{
@@ -100,6 +100,9 @@ func WithMicroVM(vm *models.MicroVM) ConfigOption {
 		for key, value := range vm.Spec.Kernel.CmdLine {
 			kernelCmdLine.Set(key, value)
 		}
+
+		tapDetails := network.GetTapDetails(0)
+		kernelCmdLine.Set("ip", fmt.Sprintf("%s::%s:%s::eth0::off", tapDetails.VmIp.To4(), tapDetails.TapIp.To4(), tapDetails.Mask.To4()))
 
 		// fmt.Printf("vm.Spec.Kernel.AddNetworkConfig: %v\n", vm.Spec.Kernel.AddNetworkConfig)
 		// fmt.Printf("kernelCmdLine: %v\n", kernelCmdLine)
@@ -158,11 +161,6 @@ func WithMicroVM(vm *models.MicroVM) ConfigOption {
 // Read more:
 // https://www.kernel.org/doc/html/v5.15/admin-guide/kernel-parameters.html
 func DefaultKernelCmdLine() shared.KernelCmdLine {
-	// TODO remove
-	tapIP := "169.254.0.22"
-	fcIP := "169.254.0.21"
-	maskLong := "255.255.255.252"
-
 	return shared.KernelCmdLine{
 		"console":       "ttyS0",
 		"reboot":        "k",
@@ -172,8 +170,6 @@ func DefaultKernelCmdLine() shared.KernelCmdLine {
 		"i8042.nomux":   "",
 		"i8042.nopnp":   "",
 		"i8042.dumbkbd": "",
-		// "ds":            "nocloud-net;s=http://169.254.169.254/latest/",
-		"ip": fmt.Sprintf("%s::%s:%s::eth0:off", fcIP, tapIP, maskLong),
 	}
 }
 
