@@ -4,6 +4,7 @@ go 1.21.5
 
 require (
 	github.com/containerd/typeurl/v2 v2.1.1
+	github.com/coreos/go-iptables v0.7.0
 	github.com/diskfs/go-diskfs v1.4.0
 	github.com/docker/go-units v0.5.0
 	github.com/firecracker-microvm/firecracker-go-sdk v1.0.0
