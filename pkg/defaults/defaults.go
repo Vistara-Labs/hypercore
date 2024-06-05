@@ -23,6 +23,9 @@ const (
 	// FirecrackerBin is the name of the firecracker binary.
 	FirecrackerBin = "firecracker"
 
+	// Path to hac.toml
+	HACFile = "hac.toml"
+
 	// FirecrackerDetach is the default for the flag to indicates with the child firecracker
 	// processes should be run detached.
 	FirecrackerDetach = true
