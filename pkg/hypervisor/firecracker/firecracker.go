@@ -69,25 +69,19 @@ func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM) erro
 		return fmt.Errorf("ensuring state dir: %w", err)
 	}
 
-	// add network interfaces
-	for i := range vm.Spec.NetworkInterfaces {
-		iface := vm.Spec.NetworkInterfaces[i]
+	// We will have only one interface, i.e. the TAP device
+	iface := vm.Spec.NetworkInterfaces[0]
+	status := &models.NetworkInterfaceStatus{}
 
-		_, ok := vm.Status.NetworkInterfaces[iface.GuestDeviceName]
-		if !ok {
-			status := &models.NetworkInterfaceStatus{}
+	vm.Status.NetworkInterfaces = make(map[string]*models.NetworkInterfaceStatus)
+	vm.Status.NetworkInterfaces[iface.GuestDeviceName] = status
 
-			vm.Status.NetworkInterfaces = make(map[string]*models.NetworkInterfaceStatus)
-			vm.Status.NetworkInterfaces[iface.GuestDeviceName] = status
-
-			nface := network.NewNetworkInterface(&vm.ID, &iface, status, f.networkSvc)
-			if err := nface.Create(ctx); err != nil {
-				return fmt.Errorf("creating network interface %w", err)
-			}
-		}
+	nface := network.NewNetworkInterface(&vm.ID, &iface, status, f.networkSvc)
+	if err := nface.Create(ctx); err != nil {
+		return fmt.Errorf("creating network interface %w", err)
 	}
 
-	config, err := CreateConfig(WithMicroVM(vm), WithState(vmState))
+	config, err := CreateConfig(WithMicroVM(vm, status), WithState(vmState))
 	if err != nil {
 		return fmt.Errorf("creating firecracker config: %w", err)
 	}

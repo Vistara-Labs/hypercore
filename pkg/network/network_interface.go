@@ -53,15 +53,12 @@ func (s *createInterface) Create(ctx context.Context) error {
 		return errors.ErrMissingStatusInfo
 	}
 
-	if s.status.HostDeviceName == "" {
-		// ifaceName, err := network.NewIfaceName(s.iface.Type)
-		ifaceName, err := NewIfaceName(s.iface.Type)
-		if err != nil {
-			return fmt.Errorf("creating network interface name: %w", err)
-		}
-
-		s.status.HostDeviceName = ifaceName
+	ifaceName, err := NewIfaceName()
+	if err != nil {
+		return fmt.Errorf("creating network interface name: %w", err)
 	}
+
+	s.status.HostDeviceName = ifaceName
 
 	deviceName := s.status.HostDeviceName
 

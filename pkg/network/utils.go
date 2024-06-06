@@ -3,11 +3,10 @@ package network
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"io"
 	"net"
+	"strconv"
 	"strings"
-	"vistara-node/pkg/models"
 
 	"github.com/vishvananda/netlink"
 )
@@ -36,37 +35,30 @@ func GetTapDetails(index int) TapDetails {
 	}
 }
 
-func NewIfaceName(ifaceType models.IfaceType) (string, error) {
-	var devPrefix string
-
-	switch ifaceType {
-	case models.IfaceTypeTap:
-		return "hypercore-0", nil
-	case models.IfaceTypeMacvtap:
-		devPrefix = fmt.Sprintf("%s%s", prefix, macvtapPrefix)
-	case models.IfaceTypeUnsupported:
-		return "", interfaceErrorf("unsupported interface type: %s", ifaceType)
-	default:
-		return "", interfaceErrorf("unknown interface type: %s", ifaceType)
+func NewIfaceName() (string, error) {
+	links, err := netlink.LinkList()
+	if err != nil {
+		return "", interfaceErrorf("failed to enumerate links: %s", err)
 	}
 
-	for i := 0; i < retryGenerate; i++ {
-		name, err := generateRandomName(devPrefix)
-		if err != nil {
-			continue
-		}
+	highestLink := -1
 
-		_, err = netlink.LinkByName(name)
-		if err != nil {
-			if strings.Contains(err.Error(), "not found") {
-				return name, nil
+	// Get the next highest link available
+	for _, link := range links {
+		if strings.HasPrefix(link.Attrs().Name, "hypercore-") {
+			idxStr := strings.ReplaceAll(link.Attrs().Name, "hypercore-", "")
+			idx, err := strconv.Atoi(idxStr)
+			if err != nil {
+				return "", interfaceErrorf("got invalid link %s: %s", link.Attrs().Name, err)
 			}
 
-			return "", interfaceErrorf("unable to get link by name: %s", err.Error())
+			if idx > highestLink {
+				highestLink = idx
+			}
 		}
 	}
 
-	return "", interfaceErrorf("could not generate interface name")
+	return "hypercore-" + strconv.Itoa(highestLink+1), nil
 }
 
 func generateRandomName(prefix string) (string, error) {

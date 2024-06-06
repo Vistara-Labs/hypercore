@@ -3,6 +3,8 @@ package firecracker
 import (
 	"fmt"
 	"runtime"
+	"strconv"
+	"strings"
 	"vistara-node/pkg/errors"
 	"vistara-node/pkg/hypervisor/shared"
 	"vistara-node/pkg/models"
@@ -28,7 +30,7 @@ func CreateConfig(opts ...ConfigOption) (*VmmConfig, error) {
 	return cfg, nil
 }
 
-func WithMicroVM(vm *models.MicroVM) ConfigOption {
+func WithMicroVM(vm *models.MicroVM, status *models.NetworkInterfaceStatus) ConfigOption {
 	return func(cfg *VmmConfig) error {
 		if vm == nil {
 			return errors.ErrSpecRequired
@@ -101,7 +103,12 @@ func WithMicroVM(vm *models.MicroVM) ConfigOption {
 			kernelCmdLine.Set(key, value)
 		}
 
-		tapDetails := network.GetTapDetails(0)
+		tapIdx, err := strconv.Atoi(strings.ReplaceAll(status.HostDeviceName, "hypercore-", ""))
+		if err != nil {
+			return fmt.Errorf("Invalid interface %s: %w", status.HostDeviceName, err)
+		}
+
+		tapDetails := network.GetTapDetails(tapIdx)
 		kernelCmdLine.Set("ip", fmt.Sprintf("%s::%s:%s::eth0::off", tapDetails.VmIp.To4(), tapDetails.TapIp.To4(), tapDetails.Mask.To4()))
 
 		// fmt.Printf("vm.Spec.Kernel.AddNetworkConfig: %v\n", vm.Spec.Kernel.AddNetworkConfig)
