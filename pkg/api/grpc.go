@@ -46,7 +46,6 @@ func (s *server) Create(
 		Microvm: &types.MicroVM{
 			Version: int32(createdVm.Version),
 			Spec:    convertModelToMicroVMSpec(createdVm),
-			Status:  convertModelToMicroVMStatus(createdVm),
 		},
 	}
 

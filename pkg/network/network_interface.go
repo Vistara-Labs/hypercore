@@ -41,13 +41,8 @@ func (s *createInterface) Name() string {
 func (s *createInterface) Create(ctx context.Context) error {
 	logger := log.GetLogger(ctx).WithFields(logrus.Fields{
 		"step":  s.Name(),
-		"iface": s.iface.GuestDeviceName,
 	})
 	logger.Debug("running Create to create network interface")
-
-	if s.iface.GuestDeviceName == "" {
-		return errors.ErrGuestDeviceNameRequired
-	}
 
 	if s.status == nil {
 		return errors.ErrMissingStatusInfo

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	// "vistara-node/pkg/api/events"
+	"errors"
 	"vistara-node/pkg/api/events"
 	"vistara-node/pkg/defaults"
 	"vistara-node/pkg/log"
@@ -20,25 +21,13 @@ const (
 func (a *app) Create(ctx context.Context, vm *models.MicroVM) (*models.MicroVM, error) {
 	logger := log.GetLogger(ctx).WithField("vm", "app")
 
-	// TODO: add validation here.
-
 	if vm.ID.IsEmpty() {
-		name, err := a.ports.IdentifierService.GenerateRandom()
-		if err != nil {
-			return nil, fmt.Errorf("generating random name for microvm: %w", err)
-		}
-
-		vmid, err := models.NewVMID(name, defaults.MicroVMNamespace, "")
-		if err != nil {
-			return nil, fmt.Errorf("creating microvm vmid: %w", err)
-		}
-		vm.ID = *vmid
+		return nil, errors.New("empty vmID")
 	}
 
 	if vm.Spec.Provider == "" {
 		vm.Spec.Provider = a.cfg.DefaultProvider
 	}
-	a.addMetadataInterface(vm)
 
 	logger.Infof("Hypervisor provider: %s", vm.Spec.Provider)
 
@@ -85,30 +74,4 @@ func (*app) Metrics(ctx context.Context, id models.VMID) (ports.MachineMetrics, 
 // State implements App.
 func (*app) State(ctx context.Context, id string) (ports.MicroVMState, error) {
 	panic("unimplemented")
-}
-
-
-func (a *app) addMetadataInterface(mvm *models.MicroVM) {
-	for i := range mvm.Spec.NetworkInterfaces {
-		netInt := mvm.Spec.NetworkInterfaces[i]
-		if netInt.GuestDeviceName == MetadataInterfaceName {
-			return
-		}
-	}
-
-	interfaces := []models.NetworkInterface{
-		{
-			GuestDeviceName:       MetadataInterfaceName,
-			Type:                  models.IfaceTypeTap,
-			AllowMetadataRequests: true,
-			GuestMAC:              "AA:FF:00:00:00:01",
-			StaticAddress: &models.StaticAddress{
-				Address: "169.254.0.1/16",
-			},
-		},
-	}
-	interfaces = append(interfaces, mvm.Spec.NetworkInterfaces...)
-	mvm.Spec.NetworkInterfaces = interfaces
-
-	return
 }

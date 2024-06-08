@@ -69,14 +69,14 @@ func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM) erro
 		return fmt.Errorf("ensuring state dir: %w", err)
 	}
 
-	// We will have only one interface, i.e. the TAP device
-	iface := vm.Spec.NetworkInterfaces[0]
 	status := &models.NetworkInterfaceStatus{}
 
-	vm.Status.NetworkInterfaces = make(map[string]*models.NetworkInterfaceStatus)
-	vm.Status.NetworkInterfaces[iface.GuestDeviceName] = status
-
-	nface := network.NewNetworkInterface(&vm.ID, &iface, status, f.networkSvc)
+	// We will have only one interface, i.e. the TAP device
+	nface := network.NewNetworkInterface(&vm.ID, &models.NetworkInterface{
+		GuestMAC:   vm.Spec.GuestMAC,
+		Type:       models.IfaceTypeTap,
+		BridgeName: vm.Spec.HostNetDev,
+	}, status, f.networkSvc)
 	if err := nface.Create(ctx); err != nil {
 		return fmt.Errorf("creating network interface %w", err)
 	}
@@ -85,12 +85,11 @@ func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM) erro
 	if err != nil {
 		return fmt.Errorf("creating firecracker config: %w", err)
 	}
+
 	if err = vmState.SetConfig(config); err != nil {
 		return fmt.Errorf("saving firecracker config %W", err)
 	}
-	meta := &Metadata{
-		Latest: vm.Spec.Metadata,
-	}
+	meta := &Metadata{}
 
 	if err = vmState.SetMetadata(meta); err != nil {
 		return fmt.Errorf("saving firecracker metadata %w", err)

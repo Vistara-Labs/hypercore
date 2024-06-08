@@ -23,9 +23,8 @@ type HacConfig struct {
 		description string
 	}
 	Hardware struct {
-		Cores     int
-		Memory    int
-		Storage   int
+		Cores     int32
+		Memory    int32
 		Kernel    string
 		Drive     string
 		Interface string
@@ -80,27 +79,12 @@ func run(ctx context.Context, cfg *config.Config) error {
 	request := microvm.CreateMicroVMRequest{
 		Microvm: &types.MicroVMSpec{
 			Id:         vmUUID,
-			Uid:        &vmUUID,
-			Namespace:  vmUUID,
-			Vcpu:       1,
-			MemoryInMb: 4096,
-			Kernel: &types.Kernel{
-				Image:    hacConfig.Hardware.Kernel,
-				Filename: &hacConfig.Hardware.Kernel,
-			},
-			RootVolume: &types.Volume{
-				Id: hacConfig.Hardware.Drive,
-			},
-			Interfaces: []*types.NetworkInterface{
-				{
-					Type:     types.NetworkInterface_TAP,
-					GuestMac: &guestMac,
-					Overrides: &types.NetworkOverrides{
-						BridgeName: &hacConfig.Hardware.Interface,
-					},
-					DeviceId: "eth0",
-				},
-			},
+			Vcpu:       hacConfig.Hardware.Cores,
+			MemoryInMb: hacConfig.Hardware.Memory,
+			KernelPath: hacConfig.Hardware.Kernel,
+			RootfsPath: hacConfig.Hardware.Drive,
+			GuestMac:   guestMac,
+			HostNetDev: hacConfig.Hardware.Interface,
 		},
 	}
 
