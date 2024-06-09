@@ -95,6 +95,6 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 
-	fmt.Printf("Response: %v", response)
+	fmt.Printf("Response: %v\n", response)
 	return nil
 }

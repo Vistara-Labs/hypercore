@@ -3,28 +3,31 @@ package api
 import (
 	"context"
 	"fmt"
-	vm1 "vistara-node/pkg/api/services/microvm"
+	vm "vistara-node/pkg/api/services/microvm"
 	"vistara-node/pkg/api/types"
+	"vistara-node/pkg/app"
+	"vistara-node/pkg/defaults"
 	"vistara-node/pkg/log"
+	"vistara-node/pkg/models"
 	"vistara-node/pkg/ports"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-func NewServer(commandSvc ports.MicroVMService) ports.MicroVMGRPCService {
+func NewServer(commandSvc *app.App) ports.MicroVMGRPCService {
 	return &server{
 		commandSvc: commandSvc,
 	}
 }
 
 type server struct {
-	commandSvc ports.MicroVMService
+	commandSvc *app.App
 }
 
 // This is the Create request: vm.services.api.VMService Create(), similar to CreateMicroVM
 func (s *server) Create(
-	ctx context.Context, req *vm1.CreateMicroVMRequest,
-) (*vm1.CreateMicroVMResponse, error) {
+	ctx context.Context, req *vm.CreateMicroVMRequest,
+) (*vm.CreateMicroVMResponse, error) {
 	logger := log.GetLogger(ctx)
 	logger.Debug("Converting request to model")
 
@@ -42,7 +45,7 @@ func (s *server) Create(
 		return nil, fmt.Errorf("creating microvm: %w", err)
 	}
 
-	resp := &vm1.CreateMicroVMResponse{
+	resp := &vm.CreateMicroVMResponse{
 		Microvm: &types.MicroVM{
 			Version: int32(createdVm.Version),
 			Spec:    convertModelToMicroVMSpec(createdVm),
@@ -53,33 +56,38 @@ func (s *server) Create(
 }
 
 func (s *server) Delete(
-	ctx context.Context, req *vm1.DeleteMicroVMRequest,
+	ctx context.Context, req *vm.DeleteMicroVMRequest,
 ) (*emptypb.Empty, error) {
 	logger := log.GetLogger(ctx)
-	logger.Info("Deleting microvm %v", req)
+	logger.Infof("Deleting microvm %v", req)
 
-	// err := s.commandSvc.Delete(ctx, req.Id)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("deleting microvm: %w", err)
-	// }
+	vmid, err := models.NewVMID(req.Id, defaults.MicroVMNamespace, "0")
+	if err != nil {
+		return nil, fmt.Errorf("creating vmid: %w", err)
+	}
+
+	err = s.commandSvc.Delete(ctx, *vmid)
+	if err != nil {
+		return nil, fmt.Errorf("deleting microvm: %w", err)
+	}
 
 	return nil, nil
 }
 
 // Get implements ports.MicroVMGRPCService.
-func (s *server) Get(ctx context.Context, req *vm1.GetMicroVMRequest) (*vm1.GetMicroVMResponse, error) {
+func (s *server) Get(ctx context.Context, req *vm.GetMicroVMRequest) (*vm.GetMicroVMResponse, error) {
 	logger := log.GetLogger(ctx)
 	logger.Info("Getting microvm %v", req)
 	return nil, nil
 }
 
 // List implements ports.MicroVMGRPCService.
-func (s *server) List(ctx context.Context, req *vm1.ListMicroVMsRequest) (*vm1.ListMicroVMsResponse, error) {
+func (s *server) List(ctx context.Context, req *vm.ListMicroVMsRequest) (*vm.ListMicroVMsResponse, error) {
 	panic("unimplemented")
 }
 
 // ListVMsStream implements ports.MicroVMGRPCService.
-func (s *server) ListVMsStream(ctx *vm1.ListMicroVMsRequest, req vm1.VMService_ListVMsStreamServer) error {
+func (s *server) ListVMsStream(ctx *vm.ListMicroVMsRequest, req vm.VMService_ListVMsStreamServer) error {
 	panic("unimplemented")
 }
 

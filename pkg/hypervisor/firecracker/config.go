@@ -42,7 +42,6 @@ func WithMicroVM(vm *models.MicroVM, status *models.NetworkInterfaceStatus) Conf
 			SMT:        runtime.GOARCH == "amd64",
 		}
 
-		mmdsNetDevices := []string{}
 		cfg.NetDevices = []NetworkInterfaceConfig{
 			{
 				IfaceID:     "eth0",
@@ -52,10 +51,8 @@ func WithMicroVM(vm *models.MicroVM, status *models.NetworkInterfaceStatus) Conf
 		}
 
 		cfg.Mmds = &MMDSConfig{
-			Version: MMDSVersion1,
-		}
-		if len(mmdsNetDevices) > 0 {
-			cfg.Mmds.NetworkInterfaces = mmdsNetDevices
+			Version:           MMDSVersion1,
+			NetworkInterfaces: []string{cfg.NetDevices[0].IfaceID},
 		}
 
 		cfg.BlockDevices = []BlockDeviceConfig{}

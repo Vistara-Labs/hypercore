@@ -2,6 +2,7 @@ package command
 
 import (
 	"fmt"
+	"vistara-node/internal/command/kill"
 	"vistara-node/internal/command/run"
 	"vistara-node/internal/command/spawn"
 	"vistara-node/internal/config"
@@ -69,8 +70,14 @@ func addRootSubCommands(cmd *cobra.Command, cfg *config.Config) error {
 		return fmt.Errorf("creating spawn command: %w", err)
 	}
 
+	killCmd, err := kill.NewCommand(cfg)
+	if err != nil {
+		return fmt.Errorf("creating kill command: %w", err)
+	}
+
 	cmd.AddCommand(runCmd)
 	cmd.AddCommand(spawnCmd)
+	cmd.AddCommand(killCmd)
 	cmd.AddCommand(versionCommand())
 
 	return nil

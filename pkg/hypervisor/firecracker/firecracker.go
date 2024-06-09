@@ -42,11 +42,6 @@ type FirecrackerService struct {
 	fs         afero.Fs
 }
 
-// Reconcile implements ports.MicroVMService.
-func (*FirecrackerService) Reconcile(ctx context.Context, vmid models.VMID) error {
-	panic("unimplemented")
-}
-
 // *services.MicroVMService
 func New(cfg *Config, networkSvc ports.NetworkService, fs afero.Fs) ports.MicroVMService {
 	return &FirecrackerService{
@@ -169,25 +164,49 @@ func (f *FirecrackerService) ensureState(vmState State) error {
 		return fmt.Errorf("opening log file %s: %w", vmState.LogPath(), err)
 	}
 
-	logFile.Close()
+	defer logFile.Close()
 
 	metricsFile, err := f.fs.OpenFile(vmState.MetricsPath(), os.O_WRONLY|os.O_CREATE|os.O_APPEND, defaults.DataFilePerm)
 	if err != nil {
 		return fmt.Errorf("opening metrics file %s: %w", vmState.MetricsPath(), err)
 	}
 
-	metricsFile.Close()
+	defer metricsFile.Close()
 
 	return nil
 }
 
-func (f *FirecrackerService) Create(ctx context.Context, vm *models.MicroVM) (*models.MicroVM, error) {
-	// Implement Firecracker stop logic
-	return nil, nil
-}
+func (f *FirecrackerService) Stop(ctx context.Context, vm *models.MicroVM) error {
+	vmState := NewState(vm.ID, f.config.StateRoot, f.fs)
 
-func (f *FirecrackerService) Delete(ctx context.Context, id string) error {
-	// Implement Firecracker status check logic
+	pid, err := vmState.PID()
+	if err != nil {
+		return fmt.Errorf("failed to get PID: %w", err)
+	}
+
+	config, err := vmState.Config()
+	if err != nil {
+		return fmt.Errorf("failed to get config: %w", err)
+	}
+
+	// TODO exec the reboot command from the guest via ssh to perform a clean
+	// shutdown, and send SIGTERM, timeout, SIGKILL
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return fmt.Errorf("failed to find process with pid %d: %w", pid, err)
+	}
+
+	if err = proc.Kill(); err != nil {
+		return fmt.Errorf("failed to kill process %d: %w", pid, err)
+	}
+
+	iface := config.NetDevices[0].HostDevName
+	if err = f.networkSvc.IfaceDelete(context.Background(), ports.DeleteIfaceInput{
+		DeviceName: iface,
+	}); err != nil {
+		return fmt.Errorf("failed to delete network interface %s: %w", iface, err)
+	}
+
 	return nil
 }
 
