@@ -77,21 +77,35 @@ func (s *server) Delete(
 // Get implements ports.MicroVMGRPCService.
 func (s *server) Get(ctx context.Context, req *vm.GetMicroVMRequest) (*vm.GetMicroVMResponse, error) {
 	logger := log.GetLogger(ctx)
-	logger.Info("Getting microvm %v", req)
+	logger.Infof("Getting microvm %v", req)
 	return nil, nil
 }
 
 // List implements ports.MicroVMGRPCService.
-func (s *server) List(ctx context.Context, req *vm.ListMicroVMsRequest) (*vm.ListMicroVMsResponse, error) {
-	panic("unimplemented")
-}
+func (s *server) List(ctx context.Context, req *emptypb.Empty) (*vm.ListMicroVMsResponse, error) {
+	vms, err := s.commandSvc.GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-// ListVMsStream implements ports.MicroVMGRPCService.
-func (s *server) ListVMsStream(ctx *vm.ListMicroVMsRequest, req vm.VMService_ListVMsStreamServer) error {
-	panic("unimplemented")
-}
+	microVMs := make([]*vm.RuntimeMicroVM, len(vms))
 
-// mustEmbedUnimplementedVMServiceServer implements ports.MicroVMGRPCService.
-func mustEmbedUnimplementedVMServiceServer() {
-	panic("unimplemented")
+	for idx, microVM := range vms {
+		runtimeData, err := s.commandSvc.GetRuntimeData(ctx, microVM)
+		if err != nil {
+			return nil, err
+		}
+
+		microVMs[idx] = &vm.RuntimeMicroVM{
+			Microvm: &types.MicroVM{
+				Version: int32(microVM.Version),
+				Spec:    convertModelToMicroVMSpec(microVM),
+			},
+			RuntimeData: runtimeData,
+		}
+	}
+
+	return &vm.ListMicroVMsResponse{
+		Microvm: microVMs,
+	}, nil
 }

@@ -57,6 +57,3 @@ type MicroVMStatus struct {
 
 // ContainerImage represents the address of a OCI image.
 type ContainerImage string
-
-// ListMicroVMQuery is a key-value map to query microvms.
-type ListMicroVMQuery map[string]string

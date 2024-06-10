@@ -149,8 +149,25 @@ func (r *containerdRepo) Get(ctx context.Context, options ports.RepositoryGetOpt
 }
 
 // GetAll implements ports.MicroVMRepository.
-func (*containerdRepo) GetAll(ctx context.Context, query models.ListMicroVMQuery) ([]*models.MicroVM, error) {
-	panic("unimplemented")
+func (r *containerdRepo) GetAll(ctx context.Context) ([]*models.MicroVM, error) {
+	namespaceCtx := namespaces.WithNamespace(ctx, r.config.Namespace)
+	digests, err := r.findDigestForSpec(namespaceCtx, ports.RepositoryGetOptions{})
+
+	if err != nil {
+		return nil, fmt.Errorf("finding content in store: %w", err)
+	}
+
+	models := make([]*models.MicroVM, len(digests))
+	for idx, digest := range digests {
+		model, err := r.getWithDigest(namespaceCtx, digest)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get digest: %v", digest)
+		}
+
+		models[idx] = model
+	}
+
+	return models, nil
 }
 
 func (c *containerdRepo) Create() (string, error) {
@@ -186,18 +203,17 @@ func (r *containerdRepo) getMutex(name string) *sync.RWMutex {
 
 func (r *containerdRepo) get(ctx context.Context, options ports.RepositoryGetOptions) (*models.MicroVM, error) {
 	namespaceCtx := namespaces.WithNamespace(ctx, r.config.Namespace)
-
-	digest, err := r.findDigestForSpec(namespaceCtx, options)
+	digests, err := r.findDigestForSpec(namespaceCtx, options)
 
 	if err != nil {
 		return nil, fmt.Errorf("finding content in store: %w", err)
 	}
 
-	if digest == nil {
+	if digests == nil {
 		return nil, nil
 	}
 
-	return r.getWithDigest(namespaceCtx, digest)
+	return r.getWithDigest(namespaceCtx, digests[0])
 }
 
 func (r *containerdRepo) findAllDigestForSpec(ctx context.Context, name, namespace string) ([]*digest.Digest, error) {
@@ -245,9 +261,7 @@ func (r *containerdRepo) getWithDigest(ctx context.Context, metadigest *digest.D
 
 func (r *containerdRepo) findDigestForSpec(ctx context.Context,
 	options ports.RepositoryGetOptions,
-) (*digest.Digest, error) {
-	var digest *digest.Digest
-
+) ([]*digest.Digest, error) {
 	combinedFilters := []string{}
 
 	if options.Name != "" {
@@ -262,13 +276,15 @@ func (r *containerdRepo) findDigestForSpec(ctx context.Context,
 		combinedFilters = append(combinedFilters, labelFilter(UIDLabel(), options.UID))
 	}
 
-	// if options.Version != "" {
-	// 	combinedFilters = append(combinedFilters, labelFilter(VersionLabel(), options.Version))
-	// }
-
 	allFilters := strings.Join(combinedFilters, ",")
 	store := r.client.ContentStore()
-	highestVersion := 0
+
+	type digestsMapVal struct {
+		version int
+		digest  *digest.Digest
+	}
+
+	digestsMap := make(map[string]digestsMapVal, 0)
 
 	err := store.Walk(
 		ctx,
@@ -279,9 +295,19 @@ func (r *containerdRepo) findDigestForSpec(ctx context.Context,
 				return fmt.Errorf("parsing version number: %w", err)
 			}
 
-			if version > highestVersion {
-				digest = &info.Digest
-				highestVersion = version
+			name := info.Labels[NameLabel()]
+
+			dgMapVal, ok := digestsMap[name]
+			if !ok {
+				digestsMap[name] = digestsMapVal{
+					version: 0,
+					digest:  &info.Digest,
+				}
+			} else if version > dgMapVal.version {
+				digestsMap[name] = digestsMapVal{
+					version: version,
+					digest:  &info.Digest,
+				}
 			}
 
 			return nil
@@ -292,5 +318,16 @@ func (r *containerdRepo) findDigestForSpec(ctx context.Context,
 		return nil, fmt.Errorf("walking content store for %s: %w", options.Name, err)
 	}
 
-	return digest, nil
+	digests := make([]*digest.Digest, 0)
+
+	for _, dgMapVal := range digestsMap {
+		digests = append(digests, dgMapVal.digest)
+	}
+
+	// Single digest requested but none found
+	if len(digests) == 0 {
+		return nil, nil
+	}
+
+	return digests, nil
 }

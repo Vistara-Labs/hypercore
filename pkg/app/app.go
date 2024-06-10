@@ -1,14 +1,15 @@
 package app
 
 import (
-    "context"
-    "fmt"
+	"context"
 	"errors"
-    "vistara-node/pkg/ports"
+	"fmt"
 	"vistara-node/pkg/api/events"
+	"vistara-node/pkg/api/types"
 	"vistara-node/pkg/defaults"
-    "vistara-node/pkg/log"
-    "vistara-node/pkg/models"
+	"vistara-node/pkg/log"
+	"vistara-node/pkg/models"
+	"vistara-node/pkg/ports"
 )
 
 const (
@@ -72,28 +73,36 @@ func (a *App) Create(ctx context.Context, vm *models.MicroVM) (*models.MicroVM, 
 	return createdVm, nil
 }
 
+func (a *App) GetAll(ctx context.Context) ([]*models.MicroVM, error) {
+	return a.ports.Repo.GetAll(ctx)
+}
+
+func (a *App) GetRuntimeData(ctx context.Context, vm *models.MicroVM) (*types.MicroVMRuntimeData, error) {
+	return a.ports.MicrovmProviders[vm.Spec.Provider].GetRuntimeData(ctx, vm)
+}
+
 // Delete implements App.
 func (a *App) Delete(ctx context.Context, vmid models.VMID) error {
-    logger := log.GetLogger(ctx).WithField("action", "delete")
+	logger := log.GetLogger(ctx).WithField("action", "delete")
 
-    logger.Debugf("Deleting microvm %v", vmid)
+	logger.Debugf("Deleting microvm %v", vmid)
 
-    vm, err := a.ports.Repo.Get(ctx, ports.RepositoryGetOptions{
-        Name: vmid.Name(),
-        Namespace: vmid.Namespace(),
-        UID: vmid.UID(),
-    })
-    if err != nil {
-        return fmt.Errorf("Getting MicroVM specs: %w", err)
-    }
+	vm, err := a.ports.Repo.Get(ctx, ports.RepositoryGetOptions{
+		Name:      vmid.Name(),
+		Namespace: vmid.Namespace(),
+		UID:       vmid.UID(),
+	})
+	if err != nil {
+		return fmt.Errorf("Getting MicroVM specs: %w", err)
+	}
 
-    logger.Infof("hypervisor provider is %v", vm.Spec.Provider)
+	logger.Infof("hypervisor provider is %v", vm.Spec.Provider)
 
-    if err := a.ports.MicrovmProviders[vm.Spec.Provider].Stop(ctx, vm); err != nil {
-        return fmt.Errorf("deleting microvm: %w", err)
-    }
+	if err := a.ports.MicrovmProviders[vm.Spec.Provider].Stop(ctx, vm); err != nil {
+		return fmt.Errorf("deleting microvm: %w", err)
+	}
 
-    // TODO delete from containerd
+	// TODO delete from containerd
 
 	return nil
 }

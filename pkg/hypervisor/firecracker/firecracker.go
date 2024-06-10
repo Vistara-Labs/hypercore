@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"time"
+	"vistara-node/pkg/api/types"
 	"vistara-node/pkg/defaults"
 	"vistara-node/pkg/hypervisor/shared"
 	"vistara-node/pkg/log"
@@ -174,6 +175,19 @@ func (f *FirecrackerService) ensureState(vmState State) error {
 	defer metricsFile.Close()
 
 	return nil
+}
+
+func (f *FirecrackerService) GetRuntimeData(ctx context.Context, vm *models.MicroVM) (*types.MicroVMRuntimeData, error) {
+	vmState := NewState(vm.ID, f.config.StateRoot, f.fs)
+
+	config, err := vmState.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	return &types.MicroVMRuntimeData{
+		NetworkInterface: config.NetDevices[0].HostDevName,
+	}, nil
 }
 
 func (f *FirecrackerService) Stop(ctx context.Context, vm *models.MicroVM) error {

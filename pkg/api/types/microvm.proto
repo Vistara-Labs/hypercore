@@ -11,6 +11,11 @@ message MicroVM {
   MicroVMSpec spec = 2;
 }
 
+message MicroVMRuntimeData {
+  // The TAP device linked to the VM
+  string network_interface = 1;
+}
+
 // MicroVMSpec represents the specification for a microvm.
 message MicroVMSpec {
   // ID is the identifier of the microvm.
