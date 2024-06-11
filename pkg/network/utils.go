@@ -3,6 +3,7 @@ package network
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"net"
 	"strconv"
@@ -35,10 +36,28 @@ func GetTapDetails(index int) TapDetails {
 	}
 }
 
+func GetLinkIp(linkName string) (net.IP, error) {
+	link, err := netlink.LinkByName(linkName)
+	if err != nil {
+		return net.IP{}, fmt.Errorf("failed to get link %s: %w", linkName, err)
+	}
+
+	routes, err := netlink.RouteList(link, 4)
+	if err != nil {
+		return net.IP{}, fmt.Errorf("failed to get routes for link %s: %w", linkName, err)
+	}
+
+	if len(routes) == 0 {
+		return net.IP{}, fmt.Errorf("got no routes for link %s", linkName)
+	}
+
+	return routes[0].Src, nil
+}
+
 func NewIfaceName() (string, error) {
 	links, err := netlink.LinkList()
 	if err != nil {
-		return "", interfaceErrorf("failed to enumerate links: %s", err)
+		return "", fmt.Errorf("failed to enumerate links: %s", err)
 	}
 
 	highestLink := -1
@@ -49,7 +68,7 @@ func NewIfaceName() (string, error) {
 			idxStr := strings.ReplaceAll(link.Attrs().Name, "hypercore-", "")
 			idx, err := strconv.Atoi(idxStr)
 			if err != nil {
-				return "", interfaceErrorf("got invalid link %s: %s", link.Attrs().Name, err)
+				return "", fmt.Errorf("got invalid link %s: %s", link.Attrs().Name, err)
 			}
 
 			if idx > highestLink {
@@ -64,7 +83,7 @@ func NewIfaceName() (string, error) {
 func generateRandomName(prefix string) (string, error) {
 	id := make([]byte, randomBytesLength)
 	if _, err := io.ReadFull(rand.Reader, id); err != nil {
-		return "", interfaceErrorf("random generator error: %s", err.Error())
+		return "", fmt.Errorf("random generator error: %s", err.Error())
 	}
 
 	return prefix + hex.EncodeToString(id)[:ifaceLength], nil

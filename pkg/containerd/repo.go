@@ -112,8 +112,18 @@ func (r *containerdRepo) Save(ctx context.Context, microvm *models.MicroVM) (*mo
 }
 
 // Delete implements ports.MicroVMRepository.
-func (*containerdRepo) Delete(ctx context.Context, microvm *models.MicroVM) error {
-	panic("unimplemented")
+func (r *containerdRepo) Delete(ctx context.Context, options ports.RepositoryGetOptions) error {
+    namespaceCtx := namespaces.WithNamespace(ctx, r.config.Namespace)
+	spec, err := r.findDigestForSpec(namespaceCtx, options)
+	if err != nil || spec == nil {
+		return fmt.Errorf("failed to find digest: %w", err)
+	}
+
+	if err = r.client.ContentStore().Delete(namespaceCtx, *spec[0]); err != nil {
+		return fmt.Errorf("failed to delete from content store: %w", err)
+	}
+
+	return nil
 }
 
 // Exists implements ports.MicroVMRepository.
@@ -214,31 +224,6 @@ func (r *containerdRepo) get(ctx context.Context, options ports.RepositoryGetOpt
 	}
 
 	return r.getWithDigest(namespaceCtx, digests[0])
-}
-
-func (r *containerdRepo) findAllDigestForSpec(ctx context.Context, name, namespace string) ([]*digest.Digest, error) {
-	store := r.client.ContentStore()
-	idLabelFilter := labelFilter(NameLabel(), name)
-	nsLabelFilter := labelFilter(NamespaceLabel(), namespace)
-	combinedFilters := []string{idLabelFilter, nsLabelFilter}
-	allFilters := strings.Join(combinedFilters, ",")
-	digests := []*digest.Digest{}
-
-	err := store.Walk(
-		ctx,
-		func(i content.Info) error {
-			digests = append(digests, &i.Digest)
-			fmt.Printf("digests: %v\n", digests)
-
-			return nil
-		},
-		allFilters,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("walking content store for %s: %w", name, err)
-	}
-
-	return digests, nil
 }
 
 func (r *containerdRepo) getWithDigest(ctx context.Context, metadigest *digest.Digest) (*models.MicroVM, error) {

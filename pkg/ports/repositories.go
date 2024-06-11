@@ -17,7 +17,7 @@ type MicroVMRepository interface {
 	// Save will save the supplied microvm spec.
 	Save(ctx context.Context, microvm *models.MicroVM) (*models.MicroVM, error)
 	// Delete will delete the supplied microvm.
-	Delete(ctx context.Context, microvm *models.MicroVM) error
+	Delete(ctx context.Context, options RepositoryGetOptions) error
 	// Get will get the microvm spec with the given name/namespace.
 	Get(ctx context.Context, options RepositoryGetOptions) (*models.MicroVM, error)
 	// GetAll will get a list of microvm details. If namespace is an empty string all

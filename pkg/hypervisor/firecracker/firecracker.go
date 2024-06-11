@@ -133,17 +133,12 @@ func (f *FirecrackerService) startMicroVM(cmd *exec.Cmd, vmState State, detached
 	cmd.Stdout = stdOutFile
 	cmd.Stdin = &bytes.Buffer{}
 
-	var startErr error
-
-	if detached && false {
-		startErr = nil //process.DetachedStart(cmd)
-	} else {
-		startErr = cmd.Start()
+	if err = cmd.Start(); err != nil {
+		return nil, fmt.Errorf("starting firecracker process: %w", err)
 	}
 
-	if startErr != nil {
-		return nil, fmt.Errorf("starting firecracker process: %w", startErr)
-	}
+	// Reap the process
+	go func() { cmd.Wait() }()
 
 	return cmd.Process, nil
 }
@@ -219,6 +214,10 @@ func (f *FirecrackerService) Stop(ctx context.Context, vm *models.MicroVM) error
 		DeviceName: iface,
 	}); err != nil {
 		return fmt.Errorf("failed to delete network interface %s: %w", iface, err)
+	}
+
+	if err = vmState.Delete(); err != nil {
+		return fmt.Errorf("failed to delete vmState dir: %w", err)
 	}
 
 	return nil

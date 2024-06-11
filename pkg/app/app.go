@@ -102,7 +102,13 @@ func (a *App) Delete(ctx context.Context, vmid models.VMID) error {
 		return fmt.Errorf("deleting microvm: %w", err)
 	}
 
-	// TODO delete from containerd
+	if err = a.ports.Repo.Delete(ctx, ports.RepositoryGetOptions{
+		Name:      vmid.Name(),
+		Namespace: vmid.Namespace(),
+		UID:       vmid.UID(),
+	}); err != nil {
+		return fmt.Errorf("deleting from containerd: %w", err)
+	}
 
 	return nil
 }

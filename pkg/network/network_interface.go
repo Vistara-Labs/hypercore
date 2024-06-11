@@ -40,7 +40,7 @@ func (s *createInterface) Name() string {
 // Create will create the network interface.
 func (s *createInterface) Create(ctx context.Context) error {
 	logger := log.GetLogger(ctx).WithFields(logrus.Fields{
-		"step":  s.Name(),
+		"step": s.Name(),
 	})
 	logger.Debug("running Create to create network interface")
 

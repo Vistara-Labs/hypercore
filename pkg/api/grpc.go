@@ -88,21 +88,23 @@ func (s *server) List(ctx context.Context, req *emptypb.Empty) (*vm.ListMicroVMs
 		return nil, err
 	}
 
-	microVMs := make([]*vm.RuntimeMicroVM, len(vms))
+	microVMs := make([]*vm.RuntimeMicroVM, 0)
 
-	for idx, microVM := range vms {
+	for _, microVM := range vms {
 		runtimeData, err := s.commandSvc.GetRuntimeData(ctx, microVM)
+		// A VM might've been killed outside the hypercore (manually)
 		if err != nil {
-			return nil, err
+			log.GetLogger(ctx).Warnf("failed to get runtime data for VM %s: %v", microVM.ID, err)
+			continue
 		}
 
-		microVMs[idx] = &vm.RuntimeMicroVM{
+		microVMs = append(microVMs, &vm.RuntimeMicroVM{
 			Microvm: &types.MicroVM{
 				Version: int32(microVM.Version),
 				Spec:    convertModelToMicroVMSpec(microVM),
 			},
 			RuntimeData: runtimeData,
-		}
+		})
 	}
 
 	return &vm.ListMicroVMsResponse{
