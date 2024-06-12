@@ -16,42 +16,36 @@ service VMService {
     }
     rpc Get(GetMicroVMRequest) returns (GetMicroVMResponse) {
     }
-    rpc List(ListMicroVMsRequest) returns (ListMicroVMsResponse) {
+    rpc List(google.protobuf.Empty) returns (ListMicroVMsResponse) {
     }
-    rpc ListVMsStream(ListMicroVMsRequest) returns (stream ListMessage);
-  }
+}
   
-  message CreateMicroVMRequest {
-    MicroVMSpec microvm = 1;
-    map<string, google.protobuf.Any> metadata = 2;
-  }
-  
-  message CreateMicroVMResponse {
-    MicroVM microvm = 1;
-  }
-  
-  message DeleteMicroVMRequest {
-    string uid = 1;
-  }
-  
-  message GetMicroVMRequest {
-    string uid = 1;
-  }
-  
-  message GetMicroVMResponse {
-    MicroVM microvm = 1;
-  }
-  
-  message ListMicroVMsRequest {
-    string namespace = 1;
-    optional string name = 2;
-  }
-  
-  message ListMicroVMsResponse {
-    repeated MicroVM microvm = 1;
-  }
-  
-  message ListMessage {
-    MicroVM microvm = 1;
-  }
-  
+message CreateMicroVMRequest {
+  MicroVMSpec microvm = 1;
+  map<string, google.protobuf.Any> metadata = 2;
+}
+
+message CreateMicroVMResponse {
+  MicroVM microvm = 1;
+}
+
+message DeleteMicroVMRequest {
+  string id = 1;
+}
+
+message GetMicroVMRequest {
+  string id = 1;
+}
+
+message GetMicroVMResponse {
+  MicroVM microvm = 1;
+}
+
+message RuntimeMicroVM {
+  MicroVM microvm = 1;
+  MicroVMRuntimeData runtime_data = 2;
+}
+
+message ListMicroVMsResponse {
+  repeated RuntimeMicroVM microvm = 1;
+}

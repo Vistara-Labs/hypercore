@@ -5,8 +5,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net"
+	"strconv"
 	"strings"
-	"vistara-node/pkg/models"
 
 	"github.com/vishvananda/netlink"
 )
@@ -21,43 +22,68 @@ const (
 	macvtapPrefix = "vtap"
 )
 
-func NewIfaceName(ifaceType models.IfaceType) (string, error) {
-	var devPrefix string
+type TapDetails struct {
+	VmIp  net.IP
+	TapIp net.IP
+	Mask  net.IP
+}
 
-	switch ifaceType {
-	case models.IfaceTypeTap:
-		devPrefix = fmt.Sprintf("%s%s", prefix, tapPrefix)
-	case models.IfaceTypeMacvtap:
-		devPrefix = fmt.Sprintf("%s%s", prefix, macvtapPrefix)
-	case models.IfaceTypeUnsupported:
-		return "", interfaceErrorf("unsupported interface type: %s", ifaceType)
-	default:
-		return "", interfaceErrorf("unknown interface type: %s", ifaceType)
+func GetTapDetails(index int) TapDetails {
+	return TapDetails{
+		VmIp:  net.IPv4(169, 254, byte(((4*index)+1)/256), byte(((4*index)+1)%256)),
+		TapIp: net.IPv4(169, 254, byte(((4*index)+2)/256), byte(((4*index)+2)%256)),
+		Mask:  net.IPv4(255, 255, 255, 252),
+	}
+}
+
+func GetLinkIp(linkName string) (net.IP, error) {
+	link, err := netlink.LinkByName(linkName)
+	if err != nil {
+		return net.IP{}, fmt.Errorf("failed to get link %s: %w", linkName, err)
 	}
 
-	for i := 0; i < retryGenerate; i++ {
-		name, err := generateRandomName(devPrefix)
-		if err != nil {
-			continue
-		}
+	routes, err := netlink.RouteList(link, 4)
+	if err != nil {
+		return net.IP{}, fmt.Errorf("failed to get routes for link %s: %w", linkName, err)
+	}
 
-		_, err = netlink.LinkByName(name)
-		if err != nil {
-			if strings.Contains(err.Error(), "not found") {
-				return name, nil
+	if len(routes) == 0 {
+		return net.IP{}, fmt.Errorf("got no routes for link %s", linkName)
+	}
+
+	return routes[0].Src, nil
+}
+
+func NewIfaceName() (string, error) {
+	links, err := netlink.LinkList()
+	if err != nil {
+		return "", fmt.Errorf("failed to enumerate links: %s", err)
+	}
+
+	highestLink := -1
+
+	// Get the next highest link available
+	for _, link := range links {
+		if strings.HasPrefix(link.Attrs().Name, "hypercore-") {
+			idxStr := strings.ReplaceAll(link.Attrs().Name, "hypercore-", "")
+			idx, err := strconv.Atoi(idxStr)
+			if err != nil {
+				return "", fmt.Errorf("got invalid link %s: %s", link.Attrs().Name, err)
 			}
 
-			return "", interfaceErrorf("unable to get link by name: %s", err.Error())
+			if idx > highestLink {
+				highestLink = idx
+			}
 		}
 	}
 
-	return "", interfaceErrorf("could not generate interface name")
+	return "hypercore-" + strconv.Itoa(highestLink+1), nil
 }
 
 func generateRandomName(prefix string) (string, error) {
 	id := make([]byte, randomBytesLength)
 	if _, err := io.ReadFull(rand.Reader, id); err != nil {
-		return "", interfaceErrorf("random generator error: %s", err.Error())
+		return "", fmt.Errorf("random generator error: %s", err.Error())
 	}
 
 	return prefix + hex.EncodeToString(id)[:ifaceLength], nil

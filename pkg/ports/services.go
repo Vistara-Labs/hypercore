@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 	vm1 "vistara-node/pkg/api/services/microvm"
+	"vistara-node/pkg/api/types"
 	"vistara-node/pkg/models"
 )
 
@@ -17,17 +18,10 @@ type MicroVMGRPCService interface {
 
 // MicroService is the port definition for a microvm service.
 type MicroVMService interface {
-	// Create will create a new microvm.
-	Create(ctx context.Context, vm *models.MicroVM) (*models.MicroVM, error)
-	// Delete will delete a VM and its runtime state.
-	Delete(ctx context.Context, id string) error
-	// Start will start a created microvm.
 	Start(ctx context.Context, vm *models.MicroVM) error
-	// Start(ctx context.Context, vmid models.VMID) error
-	Reconcile(ctx context.Context, vmid models.VMID) error
-	// State returns the state of a microvm.
+	Stop(ctx context.Context, vm *models.MicroVM) error
+	GetRuntimeData(ctx context.Context, vm *models.MicroVM) (*types.MicroVMRuntimeData, error)
 	State(ctx context.Context, id string) (MicroVMState, error)
-	// Metrics returns with the metrics of a microvm.
 	Metrics(ctx context.Context, id models.VMID) (MachineMetrics, error)
 }
 

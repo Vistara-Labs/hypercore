@@ -32,6 +32,8 @@ type State interface {
 	MetadataPath() string
 	Metadata() (Metadata, error)
 	SetMetadata(meta *Metadata) error
+
+	Delete() error
 }
 
 func NewState(vmid models.VMID, stateDir string, fs afero.Fs) State {
@@ -44,6 +46,10 @@ func NewState(vmid models.VMID, stateDir string, fs afero.Fs) State {
 type fsState struct {
 	stateRoot string
 	fs        afero.Fs
+}
+
+func (s *fsState) Delete() error {
+	return os.RemoveAll(s.stateRoot)
 }
 
 func (s *fsState) Root() string {

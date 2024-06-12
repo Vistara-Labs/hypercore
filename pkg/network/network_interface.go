@@ -40,28 +40,20 @@ func (s *createInterface) Name() string {
 // Create will create the network interface.
 func (s *createInterface) Create(ctx context.Context) error {
 	logger := log.GetLogger(ctx).WithFields(logrus.Fields{
-		"step":  s.Name(),
-		"iface": s.iface.GuestDeviceName,
+		"step": s.Name(),
 	})
 	logger.Debug("running Create to create network interface")
-
-	if s.iface.GuestDeviceName == "" {
-		return errors.ErrGuestDeviceNameRequired
-	}
 
 	if s.status == nil {
 		return errors.ErrMissingStatusInfo
 	}
 
-	if s.status.HostDeviceName == "" {
-		// ifaceName, err := network.NewIfaceName(s.iface.Type)
-		ifaceName, err := NewIfaceName(s.iface.Type)
-		if err != nil {
-			return fmt.Errorf("creating network interface name: %w", err)
-		}
-
-		s.status.HostDeviceName = ifaceName
+	ifaceName, err := NewIfaceName()
+	if err != nil {
+		return fmt.Errorf("creating network interface name: %w", err)
 	}
+
+	s.status.HostDeviceName = ifaceName
 
 	deviceName := s.status.HostDeviceName
 

@@ -12,6 +12,8 @@ type Config struct {
 	ConfigFilePath string
 	// GRPCEndpoint is the endpoint for the gRPC server.
 	GRPCAPIEndpoint string
+	// HACFile is the path to the hac.toml file
+	HACFile string
 	// HTTPAPIEndpoint is the endpoint for the HTTP proxy for the gRPC service
 	HTTPAPIEndpoint string
 	// EnableHTTPGateway indicates that the HTTP gateway should be started

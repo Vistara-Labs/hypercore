@@ -7,12 +7,13 @@ import (
 	"os"
 	"os/exec"
 	"time"
+	"vistara-node/pkg/api/types"
 	"vistara-node/pkg/defaults"
 	"vistara-node/pkg/hypervisor/shared"
 	"vistara-node/pkg/log"
 	"vistara-node/pkg/models"
-	"vistara-node/pkg/ports"
 	"vistara-node/pkg/network"
+	"vistara-node/pkg/ports"
 
 	"github.com/firecracker-microvm/firecracker-go-sdk"
 	"github.com/sirupsen/logrus"
@@ -42,11 +43,6 @@ type FirecrackerService struct {
 	fs         afero.Fs
 }
 
-// Reconcile implements ports.MicroVMService.
-func (*FirecrackerService) Reconcile(ctx context.Context, vmid models.VMID) error {
-	panic("unimplemented")
-}
-
 // *services.MicroVMService
 func New(cfg *Config, networkSvc ports.NetworkService, fs afero.Fs) ports.MicroVMService {
 	return &FirecrackerService{
@@ -69,35 +65,27 @@ func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM) erro
 		return fmt.Errorf("ensuring state dir: %w", err)
 	}
 
-	// add network interfaces
-	for i := range vm.Spec.NetworkInterfaces {
-		iface := vm.Spec.NetworkInterfaces[i]
+	status := &models.NetworkInterfaceStatus{}
 
-		_, ok := vm.Status.NetworkInterfaces[iface.GuestDeviceName]
-		if !ok {
-			status := &models.NetworkInterfaceStatus{}
-
-			vm.Status.NetworkInterfaces = make(map[string]*models.NetworkInterfaceStatus)
-			vm.Status.NetworkInterfaces[iface.GuestDeviceName] = status
-
-			nface := network.NewNetworkInterface(&vm.ID, &iface, status, f.networkSvc)
-			if err := nface.Create(ctx); err != nil {
-				return fmt.Errorf("creating network interface %w", err)
-			}
-		}
+	// We will have only one interface, i.e. the TAP device
+	nface := network.NewNetworkInterface(&vm.ID, &models.NetworkInterface{
+		GuestMAC:   vm.Spec.GuestMAC,
+		Type:       models.IfaceTypeTap,
+		BridgeName: vm.Spec.HostNetDev,
+	}, status, f.networkSvc)
+	if err := nface.Create(ctx); err != nil {
+		return fmt.Errorf("creating network interface %w", err)
 	}
 
-
-	config, err := CreateConfig(WithMicroVM(vm), WithState(vmState))
+	config, err := CreateConfig(WithMicroVM(vm, status), WithState(vmState))
 	if err != nil {
 		return fmt.Errorf("creating firecracker config: %w", err)
 	}
+
 	if err = vmState.SetConfig(config); err != nil {
 		return fmt.Errorf("saving firecracker config %W", err)
 	}
-	meta := &Metadata{
-		Latest: vm.Spec.Metadata,
-	}
+	meta := &Metadata{}
 
 	if err = vmState.SetMetadata(meta); err != nil {
 		return fmt.Errorf("saving firecracker metadata %w", err)
@@ -145,17 +133,12 @@ func (f *FirecrackerService) startMicroVM(cmd *exec.Cmd, vmState State, detached
 	cmd.Stdout = stdOutFile
 	cmd.Stdin = &bytes.Buffer{}
 
-	var startErr error
-
-	if detached && false {
-		startErr = nil //process.DetachedStart(cmd)
-	} else {
-		startErr = cmd.Start()
+	if err = cmd.Start(); err != nil {
+		return nil, fmt.Errorf("starting firecracker process: %w", err)
 	}
 
-	if startErr != nil {
-		return nil, fmt.Errorf("starting firecracker process: %w", startErr)
-	}
+	// Reap the process
+	go func() { cmd.Wait() }()
 
 	return cmd.Process, nil
 }
@@ -177,25 +160,66 @@ func (f *FirecrackerService) ensureState(vmState State) error {
 		return fmt.Errorf("opening log file %s: %w", vmState.LogPath(), err)
 	}
 
-	logFile.Close()
+	defer logFile.Close()
 
 	metricsFile, err := f.fs.OpenFile(vmState.MetricsPath(), os.O_WRONLY|os.O_CREATE|os.O_APPEND, defaults.DataFilePerm)
 	if err != nil {
 		return fmt.Errorf("opening metrics file %s: %w", vmState.MetricsPath(), err)
 	}
 
-	metricsFile.Close()
+	defer metricsFile.Close()
 
 	return nil
 }
 
-func (f *FirecrackerService) Create(ctx context.Context, vm *models.MicroVM) (*models.MicroVM, error) {
-	// Implement Firecracker stop logic
-	return nil, nil
+func (f *FirecrackerService) GetRuntimeData(ctx context.Context, vm *models.MicroVM) (*types.MicroVMRuntimeData, error) {
+	vmState := NewState(vm.ID, f.config.StateRoot, f.fs)
+
+	config, err := vmState.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	return &types.MicroVMRuntimeData{
+		NetworkInterface: config.NetDevices[0].HostDevName,
+	}, nil
 }
 
-func (f *FirecrackerService) Delete(ctx context.Context, id string) error {
-	// Implement Firecracker status check logic
+func (f *FirecrackerService) Stop(ctx context.Context, vm *models.MicroVM) error {
+	vmState := NewState(vm.ID, f.config.StateRoot, f.fs)
+
+	pid, err := vmState.PID()
+	if err != nil {
+		return fmt.Errorf("failed to get PID: %w", err)
+	}
+
+	config, err := vmState.Config()
+	if err != nil {
+		return fmt.Errorf("failed to get config: %w", err)
+	}
+
+	// TODO exec the reboot command from the guest via ssh to perform a clean
+	// shutdown, and send SIGTERM, timeout, SIGKILL
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return fmt.Errorf("failed to find process with pid %d: %w", pid, err)
+	}
+
+	if err = proc.Kill(); err != nil {
+		return fmt.Errorf("failed to kill process %d: %w", pid, err)
+	}
+
+	iface := config.NetDevices[0].HostDevName
+	if err = f.networkSvc.IfaceDelete(context.Background(), ports.DeleteIfaceInput{
+		DeviceName: iface,
+	}); err != nil {
+		return fmt.Errorf("failed to delete network interface %s: %w", iface, err)
+	}
+
+	if err = vmState.Delete(); err != nil {
+		return fmt.Errorf("failed to delete vmState dir: %w", err)
+	}
+
 	return nil
 }
 

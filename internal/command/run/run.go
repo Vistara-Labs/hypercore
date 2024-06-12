@@ -80,7 +80,7 @@ func serve(ctx context.Context, cfg *config.Config) error {
 	app := inject.InitializeApp(cfg, ports)
 
 	// initialize gRPC server with commandSvc an instance of ports.MicroVMService
-	vmGRPCService := grpcapi.NewServer(app)
+	vmGRPCService := grpcapi.NewServer(&app)
 	// logger.Infof("Initialized gRPC server %v", vmGRPCService)
 
 	serverOpts, _ := generateOpts(ctx, cfg)
@@ -162,10 +162,6 @@ func run(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-func commandUCFromApp(app app.App) ports.MicroVMService {
-	return app
-}
-
 func eventSvcFromScope(p2 *ports.Collection) ports.EventService {
 	return p2.EventService
 }
@@ -181,15 +177,14 @@ func runProcessors(ctx context.Context, cfg *config.Config) error {
 	}
 	app := inject.InitializeApp(cfg, ports)
 
-	cmdSvc := commandUCFromApp(app)
 	evtSvc := eventSvcFromScope(ports)
 
-	vmProcessors := processors.NewVMProcessor(cmdSvc, evtSvc)
+	vmProcessors := processors.NewVMProcessor(app, evtSvc)
 
 	// Run VM Processor that listens to events
 	// puts new events in a queue, r.queue.Enqueue
 	// processQueue will process the queue items
-	if err := vmProcessors.Run(ctx, 1); err != nil {
+	if err := vmProcessors.Run(ctx); err != nil {
 		logger.Fatalf("Starting VM processor: %v", err)
 	}
 

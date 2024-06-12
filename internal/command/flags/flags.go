@@ -10,6 +10,7 @@ import (
 )
 
 const (
+	hacFileFlag               = "hac"
 	grpcEndpointFlag          = "grpc-endpoint"
 	httpEndpointFlag          = "http-endpoint"
 	parentIfaceFlag           = "parent-iface"
@@ -32,6 +33,19 @@ const (
 	cloudHypervisorBinFlag    = "cloudhypervisor-bin"
 	cloudHypervisorDetachFlag = "cloudhypervisor-detach"
 )
+
+// Adds spawning-related arguments to the command
+func AddSpawnFlags(cmd *cobra.Command, cfg *config.Config) {
+	cmd.Flags().StringVar(&cfg.GRPCAPIEndpoint,
+		grpcEndpointFlag,
+		defaults.GRPCAPIEndpoint,
+		"The endpoint the gRPC server is listening on")
+
+	cmd.Flags().StringVar(&cfg.HACFile,
+		hacFileFlag,
+		defaults.HACFile,
+		"Path to hac.toml")
+}
 
 // AddGRPCServerFlagsToCommand will add gRPC server flags to the supplied command.
 func AddGRPCServerFlagsToCommand(cmd *cobra.Command, cfg *config.Config) {

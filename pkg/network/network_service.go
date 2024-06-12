@@ -5,12 +5,15 @@ import (
 	ierror "errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"vistara-node/pkg/errors"
 	"vistara-node/pkg/log"
 	"vistara-node/pkg/models"
 	"vistara-node/pkg/ports"
 
+	"github.com/coreos/go-iptables/iptables"
+	sysctl "github.com/lorenzosaino/go-sysctl"
 	"github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
 )
@@ -52,19 +55,7 @@ func (n *networkService) IfaceCreate(ctx context.Context, input ports.IfaceCreat
 
 	parentDeviceName := n.getParentIfaceName(input)
 	if parentDeviceName == "" {
-		if input.Type == models.IfaceTypeMacvtap {
-			return nil, errors.ErrParentIfaceRequiredForMacvtap
-		}
-		if input.Type == models.IfaceTypeTap && input.Attach {
-			return nil, errors.ErrParentIfaceRequiredForAttachingTap
-		}
-	}
-
-	if parentDeviceName != "" {
-		parentLink, err = netlink.LinkByName(parentDeviceName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to lookup parent network interface %q: %w", parentDeviceName, err)
-		}
+		return nil, errors.ErrParentIfaceRequiredForAttachingTap
 	}
 
 	var link netlink.Link
@@ -121,12 +112,55 @@ func (n *networkService) IfaceCreate(ctx context.Context, input ports.IfaceCreat
 
 	logger.Debugf("created interface with mac %s", macIf.Attrs().HardwareAddr.String())
 
-	if input.Type == models.IfaceTypeTap && input.Attach {
-		if err := netlink.LinkSetMaster(macIf, parentLink); err != nil {
-			return nil, fmt.Errorf("setting master for %s to %s: %w", macIf.Attrs().Name, parentLink.Attrs().Name, err)
+	if input.Type == models.IfaceTypeTap {
+		deviceNameToIndex, err := strconv.Atoi(strings.ReplaceAll(input.DeviceName, "hypercore-", ""))
+		if err != nil {
+			return nil, fmt.Errorf("deviceName %s invalid", input.DeviceName)
 		}
 
-		logger.Debugf("added interface %s to bridge %s", macIf.Attrs().Name, parentLink.Attrs().Name)
+		addr, err := netlink.ParseAddr(GetTapDetails(deviceNameToIndex).TapIp.String() + "/30")
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse TAP IP for index %d: %w", deviceNameToIndex, err)
+		}
+
+		if err = netlink.AddrAdd(link, addr); err != nil {
+			return nil, fmt.Errorf("failed to add address to TAP device: %w", err)
+		}
+
+		err = sysctl.Set("net.ipv4.ip_forward", "1")
+		if err != nil {
+			return nil, fmt.Errorf("failed to enable IPv4 forwarding: %w", err)
+		}
+
+		err = sysctl.Set(fmt.Sprintf("net.ipv4.conf.%s.proxy_arp", link.Attrs().Name), "1")
+		if err != nil {
+			return nil, fmt.Errorf("failed to enable proxy_arp: %w", err)
+		}
+
+		err = sysctl.Set(fmt.Sprintf("net.ipv6.conf.%s.disable_ipv6", link.Attrs().Name), "1")
+		if err != nil {
+			return nil, fmt.Errorf("failed to enable disable_ipv6: %w", err)
+		}
+
+		ipt, err := iptables.New()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create IPTables instance")
+		}
+
+		err = ipt.AppendUnique("nat", "POSTROUTING", "-o", parentDeviceName, "-j", "MASQUERADE")
+		if err != nil {
+			return nil, fmt.Errorf("failed to add MASQUERADE rule: %w", err)
+		}
+
+		err = ipt.InsertUnique("filter", "FORWARD", 1, "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT")
+		if err != nil {
+			return nil, fmt.Errorf("failed to add ACCEPT rule: %w", err)
+		}
+
+		err = ipt.InsertUnique("filter", "FORWARD", 1, "-i", link.Attrs().Name, "-o", parentDeviceName, "-j", "ACCEPT")
+		if err != nil {
+			return nil, fmt.Errorf("failed to add forwarding from parent device %s to TAP device %s: %w", parentDeviceName, link.Attrs().Name, err)
+		}
 	}
 
 	return &ports.IfaceDetails{

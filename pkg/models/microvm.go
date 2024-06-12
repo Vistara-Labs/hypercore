@@ -28,22 +28,15 @@ type MicroVMSpec struct {
 	// Provider specifies the name of the microvm provider to use.
 	Provider string `json:"provider"`
 	// Kernel specifies the kernel and its argments to use.
-	Kernel Kernel `json:"kernel" validate:"omitempty"`
-	// Initrd is an optional initial ramdisk to use.
-	Initrd *Initrd `json:"initrd,omitempty"`
+	Kernel string `json:"kernel" validate:"omitempty"`
 	// VCPU specifies how many vcpu the machine will be allocated.
-	VCPU int64 `json:"vcpu" validate:"required,gte=1,lte=64"`
+	VCPU int32 `json:"vcpu" validate:"required,gte=1,lte=64"`
 	// MemoryInMb is the amount of memory in megabytes that the machine will be allocated.
-	MemoryInMb int64 `json:"memory_inmb" validate:"required,gte=1024,lte=32768"`
-	// NetworkInterfaces specifies the network interfaces attached to the machine.
-	NetworkInterfaces []NetworkInterface `json:"network_interfaces" validate:"required,dive,required"`
-	// RootVolume specified the root volume to be attached to the machine.
-	RootVolume Volume `json:"root_volume" validate:"required"`
-	// AdditionalVolumes specifies the volumes to be attached to the machine.
-	AdditionalVolumes Volumes `json:"additional_volumes"`
-	// Metadata allows you to specify data to be added to the metadata service. The key is the name
-	// of the metadata item and the value is the base64 encoded contents of the metadata.
-	Metadata map[string]string `json:"metadata"`
+	MemoryInMb int32 `json:"memory_inmb" validate:"required,gte=1024,lte=32768"`
+	// HostNetDev is the device to use for passing traffic through the TAP device
+	HostNetDev string `json:"host_net_dev" validate:"required"`
+	RootfsPath string `json:"rootfs_path" validate:"required"`
+	GuestMAC   string `json:"guest_mac" validate:"required"`
 	// CreatedAt indicates the time the microvm was created at.
 	CreatedAt int64 `json:"created_at" validate:"omitempty,datetimeInPast"`
 	// UpdatedAt indicates the time the microvm was last updated.
@@ -56,29 +49,11 @@ type MicroVMSpec struct {
 type MicroVMStatus struct {
 	// State stores information about the last known state of the vm and the spec.
 	State MicroVMState `json:"state"`
-	// Volumes holds the status of the volumes.
-	Volumes VolumeStatuses `json:"volumes"`
-	// KernelMount holds the status of the kernel mount point.
-	KernelMount *Mount `json:"kernel_mount"`
-	// InitrdMount holds the status of the initrd mount point.
-	InitrdMount *Mount `json:"initrd_mount"`
-	// NetworkInterfaces holds the status of the network interfaces.
-	NetworkInterfaces NetworkInterfaceStatuses `json:"network_interfaces"`
 	// Retry is a counter about how many times we retried to reconcile.
 	Retry int `json:"retry"`
 	// NotBefore tells the system to do not reconcile until given timestamp.
 	NotBefore int64 `json:"not_before" validate:"omitempty"`
 }
 
-type Initrd struct {
-	// Image is the container image to use for the initrd.
-	Image ContainerImage `json:"image" validate:"imageURI"`
-	// Filename is the name of the initrd filename in the container.
-	Filename string
-}
-
 // ContainerImage represents the address of a OCI image.
 type ContainerImage string
-
-// ListMicroVMQuery is a key-value map to query microvms.
-type ListMicroVMQuery map[string]string
