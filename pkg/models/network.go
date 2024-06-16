@@ -6,6 +6,12 @@ import (
 	"strings"
 )
 
+type TapDetails struct {
+	VmIp  net.IP
+	TapIp net.IP
+	Mask  net.IP
+}
+
 // NetworkInterface represents a network interface for the microvm.
 type NetworkInterface struct {
 	// GuestDeviceName is the name of the network interface to create in the microvm.
@@ -75,6 +81,8 @@ type NetworkInterfaceStatus struct {
 	Index int `json:"index"`
 	// MACAddress is the MAC address of the host interface.
 	MACAddress string `json:"mac_address"`
+	// TAP devicee details
+	TapDetails TapDetails
 }
 
 // NetworkInterfaceStatuses is a collection of network interfaces.

@@ -123,6 +123,8 @@ type IfaceCreateInput struct {
 	Attach bool
 	// BridgeName is the name of the bridge to attach to. Only if this is a tap device and attach is true.
 	BridgeName string
+	// IP to bind the interface to
+	IP4 string
 }
 
 type IfaceDetails struct {

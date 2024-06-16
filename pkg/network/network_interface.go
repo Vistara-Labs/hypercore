@@ -48,14 +48,12 @@ func (s *createInterface) Create(ctx context.Context) error {
 		return errors.ErrMissingStatusInfo
 	}
 
-	ifaceName, err := NewIfaceName()
+	ifaceIdx, err := NewIfaceIdx()
 	if err != nil {
-		return fmt.Errorf("creating network interface name: %w", err)
+		return fmt.Errorf("creating network interface id: %w", err)
 	}
 
-	s.status.HostDeviceName = ifaceName
-
-	deviceName := s.status.HostDeviceName
+	deviceName := fmt.Sprintf("hypercore-%d", ifaceIdx)
 
 	exists, err := s.svc.IfaceExists(ctx, deviceName)
 	if err != nil {
@@ -63,17 +61,10 @@ func (s *createInterface) Create(ctx context.Context) error {
 	}
 
 	if exists {
-		details, detailsErr := s.svc.IfaceDetails(ctx, deviceName)
-		if detailsErr != nil {
-			return fmt.Errorf("getting interface details: %w", detailsErr)
-		}
-
-		s.status.HostDeviceName = deviceName
-		s.status.Index = details.Index
-		s.status.MACAddress = details.MAC
-
-		return nil
+		return fmt.Errorf("interface %s already exists", deviceName)
 	}
+
+	tapDetails := GetTapDetails(ifaceIdx)
 
 	input := &ports.IfaceCreateInput{
 		DeviceName: deviceName,
@@ -81,6 +72,7 @@ func (s *createInterface) Create(ctx context.Context) error {
 		MAC:        s.iface.GuestMAC,
 		Attach:     true,
 		BridgeName: s.iface.BridgeName,
+		IP4:        tapDetails.TapIp.String() + "/30",
 	}
 
 	if s.iface.Type == models.IfaceTypeTap && s.iface.AllowMetadataRequests {
@@ -95,6 +87,7 @@ func (s *createInterface) Create(ctx context.Context) error {
 	s.status.HostDeviceName = deviceName
 	s.status.Index = output.Index
 	s.status.MACAddress = output.MAC
+	s.status.TapDetails = tapDetails
 
 	return nil
 }

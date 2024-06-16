@@ -146,24 +146,3 @@ func WithState(vmState State) ConfigOption {
 		return nil
 	}
 }
-
-func createNetworkIface(iface *models.NetworkInterface, status *models.NetworkInterfaceStatus) *NetworkInterfaceConfig {
-	macAddr := iface.GuestMAC
-	hostDevName := status.HostDeviceName
-
-	if iface.Type == models.IfaceTypeMacvtap {
-		hostDevName = fmt.Sprintf("/dev/tap%d", status.Index)
-
-		if macAddr == "" {
-			macAddr = status.MACAddress
-		}
-	}
-
-	netInt := &NetworkInterfaceConfig{
-		IfaceID:     iface.GuestDeviceName,
-		HostDevName: hostDevName,
-		GuestMAC:    macAddr,
-	}
-
-	return netInt
-}

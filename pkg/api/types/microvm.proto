@@ -40,16 +40,15 @@ message MicroVMSpec {
   // MAC address of the guest interface
   string GuestMac = 7;
 
+  // Provider allows you to specify the name of the microvm provider to use
+  string provider = 8;
+
   // CreatedAt indicates the time the microvm was created at.
-  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp created_at = 9;
 
   // UpdatedAt indicates the time the microvm was last updated.
-  google.protobuf.Timestamp updated_at = 13;
+  google.protobuf.Timestamp updated_at = 10;
 
   // DeletedAt indicates the time the microvm was marked as deleted.
-  google.protobuf.Timestamp deleted_at = 14;
-
-  // Provider allows you to specify the name of the microvm provider to use. If this isn't supplied
-  // then the default provider will be used.
-  optional string provider = 16;
+  google.protobuf.Timestamp deleted_at = 11;
 }

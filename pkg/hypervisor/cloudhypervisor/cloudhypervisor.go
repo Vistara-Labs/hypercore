@@ -46,10 +46,11 @@ type CloudHypervisorService struct {
 	fs         afero.Fs
 }
 
-func New(cfg *Config, networkSvc ports.NetworkService, ds ports.DiskService, m, fs afero.Fs) ports.MicroVMService {
+func New(cfg *Config, networkSvc ports.NetworkService, diskSvc ports.DiskService, fs afero.Fs) ports.MicroVMService {
 	return &CloudHypervisorService{
 		config:     cfg,
 		networkSvc: networkSvc,
+		diskSvc:    diskSvc,
 		fs:         fs,
 	}
 }
@@ -92,22 +93,19 @@ func (c *CloudHypervisorService) Start(ctx context.Context, vm *models.MicroVM) 
 		return fmt.Errorf("saving pid %d to file: %w", proc.Pid, err)
 	}
 
+	if err = vmState.SetRuntimeState(RuntimeState{HostIface: status.HostDeviceName}); err != nil {
+		return fmt.Errorf("saving runtime state: %w", err)
+	}
+
 	return nil
 }
 
 func (c *CloudHypervisorService) createCloudInitImage(ctx context.Context, vm *models.MicroVM, vmState State, networkInterfaceStatus *models.NetworkInterfaceStatus) error {
-	boolTrue := true
-	dhcpIdentifier := "mac"
-
 	cfg := &cloudinit_net.Network{
 		Version: 2,
 		Ethernet: map[string]cloudinit_net.Ethernet{
-			"eth0": {
-				DHCP4:          &boolTrue,
-				DHCPIdentifier: &dhcpIdentifier,
-				Match: cloudinit_net.Match{
-					MACAddress: networkInterfaceStatus.MACAddress,
-				},
+			"ens4": {
+				Addresses: []string{networkInterfaceStatus.TapDetails.VmIp.To4().String() + "/30"},
 			},
 		},
 	}
@@ -139,7 +137,6 @@ func (c *CloudHypervisorService) createCloudInitImage(ctx context.Context, vm *m
 }
 
 func (c *CloudHypervisorService) startMicroVM(vm *models.MicroVM, vmState State, networkInterfaceStatus *models.NetworkInterfaceStatus, detached bool) (*os.Process, error) {
-	i
 	cmdline := DefaultKernelCmdLine()
 	args := []string{
 		"--api-socket",
@@ -154,6 +151,8 @@ func (c *CloudHypervisorService) startMicroVM(vm *models.MicroVM, vmState State,
 		"--disk", fmt.Sprintf("path=%s", vm.Spec.RootfsPath), fmt.Sprintf("path=%s,readonly=on", vmState.CloudInitImage()),
 		"--net", fmt.Sprintf("tap=%s,mac=%s", networkInterfaceStatus.HostDeviceName, networkInterfaceStatus.MACAddress),
 	}
+
+	fmt.Println(args)
 
 	stdOutFile, err := c.fs.OpenFile(vmState.StdoutPath(), os.O_WRONLY|os.O_CREATE|os.O_APPEND, defaults.DataFilePerm)
 	if err != nil {
@@ -199,13 +198,13 @@ func (c *CloudHypervisorService) ensureState(vmState State) error {
 func (c *CloudHypervisorService) GetRuntimeData(ctx context.Context, vm *models.MicroVM) (*types.MicroVMRuntimeData, error) {
 	vmState := NewState(vm.ID, c.config.StateRoot, c.fs)
 
-	config, err := vmState.Config()
+	state, err := vmState.RuntimeState()
 	if err != nil {
 		return nil, err
 	}
 
 	return &types.MicroVMRuntimeData{
-		NetworkInterface: config.NetDevices[0].HostDevName,
+		NetworkInterface: state.HostIface,
 	}, nil
 }
 
@@ -228,11 +227,15 @@ func (c *CloudHypervisorService) Stop(ctx context.Context, vm *models.MicroVM) e
 		return fmt.Errorf("failed to kill process %d: %w", pid, err)
 	}
 
-	iface := config.NetDevices[0].HostDevName
+	state, err := vmState.RuntimeState()
+	if err != nil {
+		return fmt.Errorf("failed to get runtime state: %w", err)
+	}
+
 	if err = c.networkSvc.IfaceDelete(context.Background(), ports.DeleteIfaceInput{
-		DeviceName: iface,
+		DeviceName: state.HostIface,
 	}); err != nil {
-		return fmt.Errorf("failed to delete network interface %s: %w", iface, err)
+		return fmt.Errorf("failed to delete network interface %s: %w", state.HostIface, err)
 	}
 
 	if err = vmState.Delete(); err != nil {

@@ -22,6 +22,7 @@ func convertMicroVMToModel(spec *types.MicroVMSpec) (*models.MicroVM, error) {
 			HostNetDev: spec.HostNetDev,
 			RootfsPath: spec.RootfsPath,
 			GuestMAC:   spec.GuestMac,
+			Provider:   spec.Provider,
 		},
 	}
 

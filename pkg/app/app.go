@@ -42,10 +42,6 @@ func (a *App) Create(ctx context.Context, vm *models.MicroVM) (*models.MicroVM, 
 		return nil, errors.New("empty vmID")
 	}
 
-	if vm.Spec.Provider == "" {
-		vm.Spec.Provider = a.cfg.DefaultProvider
-	}
-
 	logger.Infof("Hypervisor provider: %s", vm.Spec.Provider)
 
 	// vm.Spec.CreatedAt = a.ports.Clock().Unix()
@@ -128,10 +124,15 @@ func (a *App) Reconcile(ctx context.Context, vmid models.VMID) error {
 		return fmt.Errorf("Getting MicroVM spec to start VM: %w", err)
 	}
 
-	logger.Infof("hypervisor provider is %v", vm.Spec.Provider)
+	logger.Infof("hypervisor provider is %s", vm.Spec.Provider)
+
+	provider, ok := a.ports.MicrovmProviders[vm.Spec.Provider]
+	if !ok {
+		return fmt.Errorf("provider %s not found", vm.Spec.Provider)
+	}
 
 	// call chosen hypervisor to start the vm
-	if err := a.ports.MicrovmProviders[vm.Spec.Provider].Start(ctx, vm); err != nil {
+	if err := provider.Start(ctx, vm); err != nil {
 		return fmt.Errorf("starting microvm: %w", err)
 	}
 

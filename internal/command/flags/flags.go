@@ -32,10 +32,16 @@ const (
 	debugEndpointFlag         = "debug-endpoint"
 	cloudHypervisorBinFlag    = "cloudhypervisor-bin"
 	cloudHypervisorDetachFlag = "cloudhypervisor-detach"
+	vmProviderFlag            = "provider"
 )
 
 // Adds spawning-related arguments to the command
 func AddSpawnFlags(cmd *cobra.Command, cfg *config.Config) {
+	cmd.Flags().StringVar(&cfg.DefaultVMProvider,
+		vmProviderFlag,
+		firecracker.HypervisorName,
+		"VM Provider to use")
+
 	cmd.Flags().StringVar(&cfg.GRPCAPIEndpoint,
 		grpcEndpointFlag,
 		defaults.GRPCAPIEndpoint,
@@ -134,9 +140,7 @@ func AddHiddenFlagsToCommand(cmd *cobra.Command, cfg *config.Config) error {
 // AddMicrovmProviderFlagsToCommand will add the microvm provider flags to the supplied command
 func AddMicrovmProviderFlagsToCommand(cmd *cobra.Command, cfg *config.Config) {
 	addFirecrackerFlagsToCommand(cmd, cfg)
-	// addCloudHypervisorFlagsToCommand(cmd, cfg)
-	cmd.Flags().StringVar(&cfg.DefaultVMProvider, "default-provider",
-		firecracker.HypervisorName, "The name of the vm provider to use by default if not supplied in the create request.")
+	addCloudHypervisorFlagsToCommand(cmd, cfg)
 }
 
 // AddContainerDFlagsToCommand will add the containerd specific flags to the supplied cobra command.

@@ -85,6 +85,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 			RootfsPath: hacConfig.Hardware.Drive,
 			GuestMac:   guestMac,
 			HostNetDev: hacConfig.Hardware.Interface,
+			Provider:   cfg.DefaultVMProvider,
 		},
 	}
 

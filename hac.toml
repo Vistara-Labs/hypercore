@@ -5,6 +5,6 @@ description = "Testing"
 [hardware] # resource allocation
 cores = 4 # Number of CPU cores
 memory = 4096 # Memory in MB
-kernel = "/home/dev/hypercore/vmlinux-5.10.217"
+kernel = "/home/dev/linux-cloud-hypervisor/arch/x86/boot/bzImage"
 drive = "/home/dev/hypercore/ubuntu-22.04.ext4"
 interface = "ens2"
