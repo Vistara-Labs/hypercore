@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"time"
 	"vistara-node/pkg/api/types"
+	cloudinit "vistara-node/pkg/cloudinit"
 	cloudinit_net "vistara-node/pkg/cloudinit/network"
 	"vistara-node/pkg/defaults"
 	"vistara-node/pkg/hypervisor/shared"
@@ -104,13 +105,14 @@ func (c *CloudHypervisorService) createCloudInitImage(ctx context.Context, vm *m
 	cfg := &cloudinit_net.Network{
 		Version: 2,
 		Ethernet: map[string]cloudinit_net.Ethernet{
-			"ens4": {
-				Addresses: []string{networkInterfaceStatus.TapDetails.VmIp.To4().String() + "/30"},
+			"ens3": {
+				GatewayIPv4: networkInterfaceStatus.TapDetails.VmIp.To4().String(),
+				Addresses:   []string{networkInterfaceStatus.TapDetails.VmIp.To4().String() + "/30"},
 			},
 		},
 	}
 
-	yamlCfg, err := yaml.Marshal(cfg)
+	yamlNetworkCfg, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshalling network data: %w", err)
 	}
@@ -118,13 +120,22 @@ func (c *CloudHypervisorService) createCloudInitImage(ctx context.Context, vm *m
 	input := ports.DiskCreateInput{
 		Path:       vmState.CloudInitImage(),
 		Size:       "8Mb",
-		VolumeName: "cidata",
+		VolumeName: cloudinit.VolumeName,
 		Type:       ports.DiskTypeFat32,
 		Overwrite:  true,
 		Files: []ports.DiskFile{
 			{
 				Path:          "/network-config",
-				ContentBase64: base64.StdEncoding.EncodeToString(yamlCfg),
+				ContentBase64: base64.StdEncoding.EncodeToString(yamlNetworkCfg),
+			},
+			// TODO remove hardcoded user config
+			{
+				Path:          "/user-data",
+				ContentBase64: "I2Nsb3VkLWNvbmZpZwp1c2VyczoKICAtIG5hbWU6IGNsb3VkCiAgICBwYXNzd2Q6ICQ2JDcxMjU3ODc3NTFhOGQxOGEkc0h3R3lTb21VQTFQYXdpTkZXVkNLWVFOLkVjLld6ejBKdFBQTDFNdnpGcmt3bW9wMmRxNy40Q1lmMDNBNW9lbVBRNHBPRkNDcnRDZWx2RkJFbGUvSy4KICAgIHN1ZG86IEFMTD0oQUxMKSBOT1BBU1NXRDpBTEwKICAgIGxvY2tfcGFzc3dkOiBGYWxzZQogICAgaW5hY3RpdmU6IEZhbHNlCiAgICBzaGVsbDogL2Jpbi9iYXNoCgpzc2hfcHdhdXRoOiBUcnVlCg==",
+			},
+			{
+				Path:          "/meta-data",
+				ContentBase64: "aW5zdGFuY2UtaWQ6IGNsb3VkCmxvY2FsLWhvc3RuYW1lOiBjbG91ZAo=",
 			},
 		},
 	}
@@ -137,14 +148,14 @@ func (c *CloudHypervisorService) createCloudInitImage(ctx context.Context, vm *m
 }
 
 func (c *CloudHypervisorService) startMicroVM(vm *models.MicroVM, vmState State, networkInterfaceStatus *models.NetworkInterfaceStatus, detached bool) (*os.Process, error) {
-	cmdline := DefaultKernelCmdLine()
 	args := []string{
 		"--api-socket",
 		vmState.SockPath(),
 		"--log-file",
 		vmState.LogPath(),
 		"-v",
-		"--cmdline", cmdline.String(),
+		"--serial", "tty",
+		"--console", "off",
 		"--kernel", fmt.Sprintf("%s", vm.Spec.Kernel),
 		"--cpus", fmt.Sprintf("boot=%d", vm.Spec.VCPU),
 		"--memory", fmt.Sprintf("size=%dM", vm.Spec.MemoryInMb),

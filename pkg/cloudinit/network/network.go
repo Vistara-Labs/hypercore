@@ -10,7 +10,6 @@ type Network struct {
 }
 
 type Ethernet struct {
-	Match          Match       `yaml:"match"`
 	Addresses      []string    `yaml:"addresses,omitempty"`
 	GatewayIPv4    string      `yaml:"gateway4,omitempty"`
 	GatewayIPv6    string      `yaml:"gateway6,omitempty"`
