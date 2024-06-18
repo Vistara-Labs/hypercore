@@ -15,6 +15,9 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/containerd/containerd/v2/pkg/cio"
+	"github.com/containerd/containerd/v2/pkg/oci"
+	"github.com/google/uuid"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 
 	// v12 "github.com/google/go-containerregistry/pkg/v1"
@@ -113,7 +116,7 @@ func (r *containerdRepo) Save(ctx context.Context, microvm *models.MicroVM) (*mo
 
 // Delete implements ports.MicroVMRepository.
 func (r *containerdRepo) Delete(ctx context.Context, options ports.RepositoryGetOptions) error {
-    namespaceCtx := namespaces.WithNamespace(ctx, r.config.Namespace)
+	namespaceCtx := namespaces.WithNamespace(ctx, r.config.Namespace)
 	spec, err := r.findDigestForSpec(namespaceCtx, options)
 	if err != nil || spec == nil {
 		return fmt.Errorf("failed to find digest: %w", err)
@@ -129,6 +132,56 @@ func (r *containerdRepo) Delete(ctx context.Context, options ports.RepositoryGet
 // Exists implements ports.MicroVMRepository.
 func (*containerdRepo) Exists(ctx context.Context, vmid models.VMID) (bool, error) {
 	panic("unimplemented")
+}
+
+func (r *containerdRepo) createContainer(ctx context.Context, ref string) (string, error) {
+	namespaceCtx := namespaces.WithNamespace(ctx, r.config.Namespace)
+
+	image, err := r.client.Pull(namespaceCtx, ref, containerd.WithPullUnpack)
+	if err != nil {
+		return "", fmt.Errorf("failed to pull image %s: %w", ref, err)
+	}
+
+	containerId := uuid.NewString()
+
+	container, err := r.client.NewContainer(
+		namespaceCtx,
+		containerId,
+		containerd.WithImage(image),
+		containerd.WithNewSnapshot(uuid.NewString(), image),
+		containerd.WithNewSpec(oci.WithImageConfig(image)),
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to create new container %s: %w", containerId, err)
+	}
+
+	cleanup := true
+	defer func() {
+		if cleanup {
+			container.Delete(namespaceCtx)
+		}
+	}()
+
+	task, err := container.NewTask(ctx, cio.NewCreator(cio.WithStdio))
+	if err != nil {
+		return "", fmt.Errorf("failed to start task for container %s: %w", containerId, err)
+	}
+
+	defer func() {
+		if cleanup {
+			task.Delete(namespaceCtx)
+		}
+	}()
+
+	exitStatusChan, err := task.Wait(namespaceCtx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get exit status chan for container %s task: %w", containerId, err)
+	}
+
+	// TODO store exitStatusChan and container mapping internally to wait later
+
+	cleanup = false
+	return containerId, nil
 }
 
 // Get implements ports.MicroVMRepository.
