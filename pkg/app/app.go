@@ -69,6 +69,14 @@ func (a *App) Create(ctx context.Context, vm *models.MicroVM) (*models.MicroVM, 
 	return createdVm, nil
 }
 
+func (a *App) CreateContainer(ctx context.Context, ref string) (string, error) {
+	return a.ports.Repo.CreateContainer(ctx, ref)
+}
+
+func (a *App) DeleteContainer(ctx context.Context, containerId string) error {
+	return a.ports.Repo.DeleteContainer(ctx, containerId)
+}
+
 func (a *App) GetAll(ctx context.Context) ([]*models.MicroVM, error) {
 	return a.ports.Repo.GetAll(ctx)
 }

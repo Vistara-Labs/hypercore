@@ -25,4 +25,7 @@ type MicroVMRepository interface {
 	GetAll(ctx context.Context) ([]*models.MicroVM, error)
 	// Exists checks to see if the microvm spec exists in the repo.
 	Exists(ctx context.Context, vmid models.VMID) (bool, error)
+	// Returns a container ID
+	CreateContainer(ctx context.Context, ref string) (string, error)
+	DeleteContainer(ctx context.Context, containerId string) error
 }

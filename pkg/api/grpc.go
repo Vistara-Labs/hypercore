@@ -55,6 +55,19 @@ func (s *server) Create(
 	return resp, nil
 }
 
+func (s *server) CreateContainer(
+	ctx context.Context, req *vm.CreateContainerRequest,
+) (*vm.CreateContainerResponse, error) {
+	containerId, err := s.commandSvc.CreateContainer(ctx, req.Ref)
+	if err != nil {
+		return nil, fmt.Errorf("creating container: %w", err)
+	}
+
+	return &vm.CreateContainerResponse{
+		ContainerID: containerId,
+	}, nil
+}
+
 func (s *server) Delete(
 	ctx context.Context, req *vm.DeleteMicroVMRequest,
 ) (*emptypb.Empty, error) {
@@ -69,6 +82,17 @@ func (s *server) Delete(
 	err = s.commandSvc.Delete(ctx, *vmid)
 	if err != nil {
 		return nil, fmt.Errorf("deleting microvm: %w", err)
+	}
+
+	return nil, nil
+}
+
+func (s *server) DeleteContainer(
+	ctx context.Context, req *vm.DeleteContainerRequest,
+) (*emptypb.Empty, error) {
+	err := s.commandSvc.DeleteContainer(ctx, req.ContainerID)
+	if err != nil {
+		return nil, fmt.Errorf("deleting container: %w", err)
 	}
 
 	return nil, nil

@@ -12,7 +12,11 @@ option go_package = "pkg/api/services/microvm;microvm";
 service VMService {
     rpc Create(CreateMicroVMRequest) returns (CreateMicroVMResponse) {
     }
+    rpc CreateContainer(CreateContainerRequest) returns (CreateContainerResponse) {
+    }
     rpc Delete(DeleteMicroVMRequest) returns (google.protobuf.Empty) {
+    }
+    rpc DeleteContainer(DeleteContainerRequest) returns (google.protobuf.Empty) {
     }
     rpc Get(GetMicroVMRequest) returns (GetMicroVMResponse) {
     }
@@ -29,8 +33,20 @@ message CreateMicroVMResponse {
   MicroVM microvm = 1;
 }
 
+message CreateContainerRequest {
+  string Ref = 1;
+}
+
+message CreateContainerResponse {
+  string ContainerID = 1;
+}
+
 message DeleteMicroVMRequest {
   string id = 1;
+}
+
+message DeleteContainerRequest {
+  string ContainerID = 1;
 }
 
 message GetMicroVMRequest {

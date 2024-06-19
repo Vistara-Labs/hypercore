@@ -24,7 +24,9 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type VMServiceClient interface {
 	Create(ctx context.Context, in *CreateMicroVMRequest, opts ...grpc.CallOption) (*CreateMicroVMResponse, error)
+	CreateContainer(ctx context.Context, in *CreateContainerRequest, opts ...grpc.CallOption) (*CreateContainerResponse, error)
 	Delete(ctx context.Context, in *DeleteMicroVMRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	DeleteContainer(ctx context.Context, in *DeleteContainerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	Get(ctx context.Context, in *GetMicroVMRequest, opts ...grpc.CallOption) (*GetMicroVMResponse, error)
 	List(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListMicroVMsResponse, error)
 }
@@ -46,9 +48,27 @@ func (c *vMServiceClient) Create(ctx context.Context, in *CreateMicroVMRequest, 
 	return out, nil
 }
 
+func (c *vMServiceClient) CreateContainer(ctx context.Context, in *CreateContainerRequest, opts ...grpc.CallOption) (*CreateContainerResponse, error) {
+	out := new(CreateContainerResponse)
+	err := c.cc.Invoke(ctx, "/vm.services.api.VMService/CreateContainer", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *vMServiceClient) Delete(ctx context.Context, in *DeleteMicroVMRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, "/vm.services.api.VMService/Delete", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *vMServiceClient) DeleteContainer(ctx context.Context, in *DeleteContainerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, "/vm.services.api.VMService/DeleteContainer", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +98,9 @@ func (c *vMServiceClient) List(ctx context.Context, in *emptypb.Empty, opts ...g
 // for forward compatibility
 type VMServiceServer interface {
 	Create(context.Context, *CreateMicroVMRequest) (*CreateMicroVMResponse, error)
+	CreateContainer(context.Context, *CreateContainerRequest) (*CreateContainerResponse, error)
 	Delete(context.Context, *DeleteMicroVMRequest) (*emptypb.Empty, error)
+	DeleteContainer(context.Context, *DeleteContainerRequest) (*emptypb.Empty, error)
 	Get(context.Context, *GetMicroVMRequest) (*GetMicroVMResponse, error)
 	List(context.Context, *emptypb.Empty) (*ListMicroVMsResponse, error)
 }
@@ -90,8 +112,14 @@ type UnimplementedVMServiceServer struct {
 func (UnimplementedVMServiceServer) Create(context.Context, *CreateMicroVMRequest) (*CreateMicroVMResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Create not implemented")
 }
+func (UnimplementedVMServiceServer) CreateContainer(context.Context, *CreateContainerRequest) (*CreateContainerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateContainer not implemented")
+}
 func (UnimplementedVMServiceServer) Delete(context.Context, *DeleteMicroVMRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Delete not implemented")
+}
+func (UnimplementedVMServiceServer) DeleteContainer(context.Context, *DeleteContainerRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteContainer not implemented")
 }
 func (UnimplementedVMServiceServer) Get(context.Context, *GetMicroVMRequest) (*GetMicroVMResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
@@ -129,6 +157,24 @@ func _VMService_Create_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VMService_CreateContainer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateContainerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VMServiceServer).CreateContainer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/vm.services.api.VMService/CreateContainer",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VMServiceServer).CreateContainer(ctx, req.(*CreateContainerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _VMService_Delete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeleteMicroVMRequest)
 	if err := dec(in); err != nil {
@@ -143,6 +189,24 @@ func _VMService_Delete_Handler(srv interface{}, ctx context.Context, dec func(in
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(VMServiceServer).Delete(ctx, req.(*DeleteMicroVMRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VMService_DeleteContainer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteContainerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VMServiceServer).DeleteContainer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/vm.services.api.VMService/DeleteContainer",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VMServiceServer).DeleteContainer(ctx, req.(*DeleteContainerRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -195,8 +259,16 @@ var VMService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _VMService_Create_Handler,
 		},
 		{
+			MethodName: "CreateContainer",
+			Handler:    _VMService_CreateContainer_Handler,
+		},
+		{
 			MethodName: "Delete",
 			Handler:    _VMService_Delete_Handler,
+		},
+		{
+			MethodName: "DeleteContainer",
+			Handler:    _VMService_DeleteContainer_Handler,
 		},
 		{
 			MethodName: "Get",
