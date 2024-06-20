@@ -13,5 +13,6 @@ type Config struct {
 	// SocketPath is the path to the containerd socket.
 	SocketPath string
 	// Namespace is the default containerd namespace to use
-	Namespace string
+	Namespace          string
+	ContainerNamespace string
 }

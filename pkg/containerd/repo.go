@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"vistara-node/pkg/defaults"
 	"vistara-node/pkg/errors"
 	"vistara-node/pkg/log"
 	"vistara-node/pkg/models"
@@ -143,7 +144,7 @@ func (*containerdRepo) Exists(ctx context.Context, vmid models.VMID) (bool, erro
 }
 
 func (r *containerdRepo) CreateContainer(ctx context.Context, ref string) (string, error) {
-	namespaceCtx := namespaces.WithNamespace(ctx, r.config.Namespace)
+	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
 
 	image, err := r.client.Pull(namespaceCtx, ref, containerd.WithPullUnpack)
 	if err != nil {
@@ -152,7 +153,7 @@ func (r *containerdRepo) CreateContainer(ctx context.Context, ref string) (strin
 
 	// We don't want the context stored internally to get cancelled
 	// when this request completes
-	namespaceCtx = namespaces.WithNamespace(context.Background(), r.config.Namespace)
+	namespaceCtx = namespaces.WithNamespace(context.Background(), r.config.ContainerNamespace)
 
 	containerId := uuid.NewString()
 
@@ -174,6 +175,9 @@ func (r *containerdRepo) CreateContainer(ctx context.Context, ref string) (strin
 			container.Delete(namespaceCtx, containerd.WithSnapshotCleanup)
 		}
 	}()
+
+	// TODO move this whole function outside and use the
+	// fs service to setup stdout/err files
 
 	task, err := container.NewTask(namespaceCtx, cio.NewCreator(cio.WithStdio))
 	if err != nil {
@@ -207,7 +211,7 @@ func (r *containerdRepo) CreateContainer(ctx context.Context, ref string) (strin
 }
 
 func (r *containerdRepo) DeleteContainer(ctx context.Context, containerId string) error {
-	namespaceCtx := namespaces.WithNamespace(ctx, r.config.Namespace)
+	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
 
 	container, exists := r.containerMap[containerId]
 	if !exists {
@@ -264,7 +268,10 @@ func (r *containerdRepo) Get(ctx context.Context, options ports.RepositoryGetOpt
 // GetAll implements ports.MicroVMRepository.
 func (r *containerdRepo) GetAll(ctx context.Context) ([]*models.MicroVM, error) {
 	namespaceCtx := namespaces.WithNamespace(ctx, r.config.Namespace)
-	digests, err := r.findDigestForSpec(namespaceCtx, ports.RepositoryGetOptions{})
+	// Make sure we don't try to fetch from the container namespace
+	digests, err := r.findDigestForSpec(namespaceCtx, ports.RepositoryGetOptions{
+		Namespace: defaults.MicroVMNamespace,
+	})
 
 	if err != nil {
 		return nil, fmt.Errorf("finding content in store: %w", err)
@@ -334,7 +341,7 @@ func (r *containerdRepo) getWithDigest(ctx context.Context, metadigest *digest.D
 		Digest: *metadigest,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("reading content %s: %w", metadigest, "ErrReadingContent")
+		return nil, fmt.Errorf("reading content %s: %w", metadigest, ErrReadingContent)
 	}
 
 	microvm := &models.MicroVM{}

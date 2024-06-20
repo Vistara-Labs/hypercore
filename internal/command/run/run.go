@@ -255,10 +255,11 @@ func appPorts(
 
 func containerdConfig(cfg *config.Config) *containerd.Config {
 	return &containerd.Config{
-		SnapshotterKernel: cfg.CtrSnapshotterKernel,
-		SnapshotterVolume: defaults.ContainerdVolumeSnapshotter,
-		SocketPath:        cfg.CtrSocketPath,
-		Namespace:         cfg.CtrNamespace,
+		SnapshotterKernel:  cfg.CtrSnapshotterKernel,
+		SnapshotterVolume:  defaults.ContainerdVolumeSnapshotter,
+		SocketPath:         cfg.CtrSocketPath,
+		Namespace:          cfg.CtrNamespace,
+		ContainerNamespace: cfg.CtrNamespace + "-container",
 	}
 }
 
