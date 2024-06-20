@@ -46,7 +46,6 @@ func NewVMRepoWithClient(cfg *Config, client *containerd.Client) ports.MicroVMRe
 }
 
 type RunningContainer struct {
-	Ctx            context.Context
 	ExitStatusChan <-chan containerd.ExitStatus
 	Task           containerd.Task
 }
@@ -151,6 +150,10 @@ func (r *containerdRepo) CreateContainer(ctx context.Context, ref string) (strin
 		return "", fmt.Errorf("failed to pull image %s: %w", ref, err)
 	}
 
+	// We don't want the context stored internally to get cancelled
+	// when this request completes
+	namespaceCtx = namespaces.WithNamespace(context.Background(), r.config.Namespace)
+
 	containerId := uuid.NewString()
 
 	container, err := r.client.NewContainer(
@@ -168,7 +171,7 @@ func (r *containerdRepo) CreateContainer(ctx context.Context, ref string) (strin
 
 	defer func() {
 		if cleanup {
-			container.Delete(namespaceCtx)
+			container.Delete(namespaceCtx, containerd.WithSnapshotCleanup)
 		}
 	}()
 
@@ -188,9 +191,13 @@ func (r *containerdRepo) CreateContainer(ctx context.Context, ref string) (strin
 		return "", fmt.Errorf("failed to get exit status chan for container %s task: %w", containerId, err)
 	}
 
+	err = task.Start(namespaceCtx)
+	if err != nil {
+		return "", fmt.Errorf("failed to start task for container %s: %w", containerId, err)
+	}
+
 	// TODO lock
 	r.containerMap[containerId] = RunningContainer{
-		Ctx:            namespaceCtx,
 		ExitStatusChan: exitStatusChan,
 		Task:           task,
 	}
@@ -200,12 +207,14 @@ func (r *containerdRepo) CreateContainer(ctx context.Context, ref string) (strin
 }
 
 func (r *containerdRepo) DeleteContainer(ctx context.Context, containerId string) error {
+	namespaceCtx := namespaces.WithNamespace(ctx, r.config.Namespace)
+
 	container, exists := r.containerMap[containerId]
 	if !exists {
 		return fmt.Errorf("container %s not found", containerId)
 	}
 
-	err := container.Task.Kill(container.Ctx, syscall.SIGTERM)
+	err := container.Task.Kill(namespaceCtx, syscall.SIGTERM)
 	if err != nil {
 		return fmt.Errorf("failed to kill task: %w", err)
 	}
