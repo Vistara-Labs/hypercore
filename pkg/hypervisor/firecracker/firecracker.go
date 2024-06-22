@@ -3,6 +3,7 @@ package firecracker
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -58,6 +59,10 @@ func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM) erro
 		"vmid":    vm.ID.String(),
 	})
 	logger.Debugf("creating microvm inside firecracker start")
+
+	if vm.Spec.Kernel == "" || vm.Spec.RootfsPath == "" || vm.Spec.HostNetDev == "" || vm.Spec.GuestMAC == "" {
+		return errors.New("missing fields from model")
+	}
 
 	vmState := NewState(vm.ID, f.config.StateRoot, f.fs)
 

@@ -29,26 +29,29 @@ message MicroVMSpec {
   int32 memory_in_mb = 3;
 
   // Kernel is the details of the kernel to use .
-  string kernel_path = 4;
+  optional string kernel_path = 4;
 
   // RootVolume specifies the root volume mount for the MicroVM.
-  string rootfs_path = 5;
+  optional string rootfs_path = 5;
 
   // HostNetDev is the device to use for passing traffic through the TAP device
-  string HostNetDev = 6;
+  optional string HostNetDev = 6;
 
   // MAC address of the guest interface
-  string GuestMac = 7;
+  optional string GuestMac = 7;
+
+  // Reference of the container to spawn
+  optional string ImageRef = 8;
 
   // Provider allows you to specify the name of the microvm provider to use
-  string provider = 8;
+  string provider = 9;
 
   // CreatedAt indicates the time the microvm was created at.
-  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp created_at = 10;
 
   // UpdatedAt indicates the time the microvm was last updated.
-  google.protobuf.Timestamp updated_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
 
   // DeletedAt indicates the time the microvm was marked as deleted.
-  google.protobuf.Timestamp deleted_at = 11;
+  google.protobuf.Timestamp deleted_at = 12;
 }

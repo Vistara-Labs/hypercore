@@ -143,7 +143,7 @@ func (*containerdRepo) Exists(ctx context.Context, vmid models.VMID) (bool, erro
 	panic("unimplemented")
 }
 
-func (r *containerdRepo) CreateContainer(ctx context.Context, ref string) (string, error) {
+func (r *containerdRepo) CreateContainer(ctx context.Context, ref string, cioCreator cio.Creator) (string, error) {
 	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
 
 	image, err := r.client.Pull(namespaceCtx, ref, containerd.WithPullUnpack)
@@ -176,10 +176,7 @@ func (r *containerdRepo) CreateContainer(ctx context.Context, ref string) (strin
 		}
 	}()
 
-	// TODO move this whole function outside and use the
-	// fs service to setup stdout/err files
-
-	task, err := container.NewTask(namespaceCtx, cio.NewCreator(cio.WithStdio))
+	task, err := container.NewTask(namespaceCtx, cioCreator)
 	if err != nil {
 		return "", fmt.Errorf("failed to start task for container %s: %w", containerId, err)
 	}
@@ -210,32 +207,32 @@ func (r *containerdRepo) CreateContainer(ctx context.Context, ref string) (strin
 	return containerId, nil
 }
 
-func (r *containerdRepo) DeleteContainer(ctx context.Context, containerId string) error {
+func (r *containerdRepo) DeleteContainer(ctx context.Context, containerId string) (uint32, error) {
 	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
 
 	container, exists := r.containerMap[containerId]
 	if !exists {
-		return fmt.Errorf("container %s not found", containerId)
+		return 0, fmt.Errorf("container %s not found", containerId)
 	}
 
 	err := container.Task.Kill(namespaceCtx, syscall.SIGTERM)
 	if err != nil {
-		return fmt.Errorf("failed to kill task: %w", err)
+		return 0, fmt.Errorf("failed to kill task: %w", err)
 	}
+
+	// TODO lock
+	delete(r.containerMap, containerId)
 
 	status := <-container.ExitStatusChan
 
 	code, _, err := status.Result()
 	if err != nil {
-		return fmt.Errorf("failed to get exit status: %w", err)
+		return 0, fmt.Errorf("failed to get exit status: %w", err)
 	}
 
 	log.GetLogger(ctx).Infof("container %s exited with status %d", containerId, code)
 
-	// TODO lock
-	delete(r.containerMap, containerId)
-
-	return nil
+	return code, nil
 }
 
 // Get implements ports.MicroVMRepository.

@@ -1,18 +1,18 @@
 package hypervisor
 
 import (
-	"errors"
 	"fmt"
 	"vistara-node/internal/config"
 	"vistara-node/pkg/hypervisor/cloudhypervisor"
 	"vistara-node/pkg/hypervisor/firecracker"
+	"vistara-node/pkg/hypervisor/runc"
 	"vistara-node/pkg/ports"
 
 	"github.com/spf13/afero"
 )
 
 // NewFromConfig will create instances of the vm providers based on the config.
-func NewFromConfig(cfg *config.Config, networkSvc ports.NetworkService, diskSvc ports.DiskService, fs afero.Fs) (map[string]ports.MicroVMService, error) {
+func NewFromConfig(cfg *config.Config, networkSvc ports.NetworkService, diskSvc ports.DiskService, fs afero.Fs, containerd ports.MicroVMRepository) (map[string]ports.MicroVMService, error) {
 	providers := map[string]ports.MicroVMService{}
 
 	if cfg.FirecrackerBin != "" {
@@ -31,9 +31,9 @@ func NewFromConfig(cfg *config.Config, networkSvc ports.NetworkService, diskSvc 
 		}, networkSvc, diskSvc, fs)
 	}
 
-	if len(providers) == 0 {
-		return nil, errors.New("you must enable at least 1 microvm provider")
-	}
+    providers[runc.HypervisorName] = runc.New(&runc.Config{
+        StateRoot: fmt.Sprintf("%s/vm", cfg.StateRootDir),
+    }, containerd, fs)
 
 	return providers, nil
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -62,6 +63,10 @@ func (c *CloudHypervisorService) Start(ctx context.Context, vm *models.MicroVM) 
 		"vmid":    vm.ID.String(),
 	})
 	logger.Debugf("creating microvm inside cloudhypervisor start")
+
+	if vm.Spec.Kernel == "" || vm.Spec.RootfsPath == "" || vm.Spec.HostNetDev == "" || vm.Spec.GuestMAC == "" {
+		return errors.New("missing fields from model")
+	}
 
 	vmState := NewState(vm.ID, c.config.StateRoot, c.fs)
 

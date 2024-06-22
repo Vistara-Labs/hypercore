@@ -14,7 +14,6 @@ import (
 
 	grpcapi "vistara-node/pkg/api"
 	vm1 "vistara-node/pkg/api/services/microvm"
-	"vistara-node/pkg/processors"
 
 	"vistara-node/pkg/app"
 	"vistara-node/pkg/containerd"
@@ -139,18 +138,6 @@ func run(ctx context.Context, cfg *config.Config) error {
 		}()
 	}
 
-	if !cfg.DisableReconcile {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			if err := runProcessors(ctx, cfg); err != nil {
-				logger.Errorf("failed to run VM processors: %v", err)
-				cancel()
-			}
-		}()
-	}
 	<-sigChan
 	logger.Debug("Shutdown signal received, waiting for work to finish")
 
@@ -166,31 +153,6 @@ func eventSvcFromScope(p2 *ports.Collection) ports.EventService {
 	return p2.EventService
 }
 
-func runProcessors(ctx context.Context, cfg *config.Config) error {
-	logger := log.GetLogger(ctx)
-
-	// Create a context that will be canceled when the user sends a SIGINT
-	ports, err := InitializePorts(cfg)
-
-	if err != nil {
-		return err
-	}
-	app := inject.InitializeApp(cfg, ports)
-
-	evtSvc := eventSvcFromScope(ports)
-
-	vmProcessors := processors.NewVMProcessor(app, evtSvc)
-
-	// Run VM Processor that listens to events
-	// puts new events in a queue, r.queue.Enqueue
-	// processQueue will process the queue items
-	if err := vmProcessors.Run(ctx); err != nil {
-		logger.Fatalf("Starting VM processor: %v", err)
-	}
-
-	return nil
-}
-
 func InitializePorts(cfg *config.Config) (*ports.Collection, error) {
 	config2 := containerdConfig(cfg)
 
@@ -204,7 +166,7 @@ func InitializePorts(cfg *config.Config) (*ports.Collection, error) {
 	fs := afero.NewOsFs()
 	diskService := godisk.New(fs)
 
-	v, err := hypervisor.NewFromConfig(cfg, networkService, diskService, fs)
+	v, err := hypervisor.NewFromConfig(cfg, networkService, diskService, fs, microVMRepository)
 
 	// v, err := microvm.NewFromConfig(cfg, networkService, diskService, fs)
 	if err != nil {

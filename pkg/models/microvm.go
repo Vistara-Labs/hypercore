@@ -34,9 +34,10 @@ type MicroVMSpec struct {
 	// MemoryInMb is the amount of memory in megabytes that the machine will be allocated.
 	MemoryInMb int32 `json:"memory_inmb" validate:"required,gte=1024,lte=32768"`
 	// HostNetDev is the device to use for passing traffic through the TAP device
-	HostNetDev string `json:"host_net_dev" validate:"required"`
-	RootfsPath string `json:"rootfs_path" validate:"required"`
-	GuestMAC   string `json:"guest_mac" validate:"required"`
+	HostNetDev string `json:"host_net_dev" validate:"omitempty"`
+	RootfsPath string `json:"rootfs_path" validate:"omitempty"`
+	GuestMAC   string `json:"guest_mac" validate:"omitempty"`
+	ImageRef   string `json:"image_ref" validate:"omitempty"`
 	// CreatedAt indicates the time the microvm was created at.
 	CreatedAt int64 `json:"created_at" validate:"omitempty,datetimeInPast"`
 	// UpdatedAt indicates the time the microvm was last updated.
