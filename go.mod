@@ -8,6 +8,7 @@ require (
 	github.com/containerd/typeurl/v2 v2.1.1
 	github.com/coreos/go-iptables v0.7.0
 	github.com/diskfs/go-diskfs v1.4.0
+	github.com/docker/docker v27.0.0+incompatible
 	github.com/docker/go-units v0.5.0
 	github.com/firecracker-microvm/firecracker-go-sdk v1.0.0
 	github.com/google/go-cmp v0.6.0
@@ -40,6 +41,8 @@ require (
 	github.com/containerd/ttrpc v1.2.4 // indirect
 	github.com/containernetworking/cni v1.2.0 // indirect
 	github.com/containernetworking/plugins v1.5.0 // indirect
+	github.com/distribution/reference v0.6.0 // indirect
+	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect
 	github.com/elliotwutingfeng/asciiset v0.0.0-20230602022725-51bbb787efab // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
@@ -62,11 +65,13 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/klauspost/compress v1.17.8 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/locker v1.0.1 // indirect
 	github.com/moby/sys/mountinfo v0.7.1 // indirect
 	github.com/moby/sys/sequential v0.5.0 // indirect
 	github.com/moby/sys/signal v0.7.0 // indirect
 	github.com/moby/sys/user v0.1.0 // indirect
+	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/opencontainers/runtime-spec v1.2.0 // indirect
 	github.com/opencontainers/selinux v1.11.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect

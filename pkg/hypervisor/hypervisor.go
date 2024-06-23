@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"vistara-node/internal/config"
 	"vistara-node/pkg/hypervisor/cloudhypervisor"
+	"vistara-node/pkg/hypervisor/docker"
 	"vistara-node/pkg/hypervisor/firecracker"
 	"vistara-node/pkg/hypervisor/runc"
 	"vistara-node/pkg/ports"
@@ -31,9 +32,16 @@ func NewFromConfig(cfg *config.Config, networkSvc ports.NetworkService, diskSvc 
 		}, networkSvc, diskSvc, fs)
 	}
 
-    providers[runc.HypervisorName] = runc.New(&runc.Config{
-        StateRoot: fmt.Sprintf("%s/vm", cfg.StateRootDir),
-    }, containerd, fs)
+	dockerProvider, err := docker.New()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create docker provider: %w", err)
+	}
+
+	providers[docker.HypervisorName] = dockerProvider
+
+	providers[runc.HypervisorName] = runc.New(&runc.Config{
+		StateRoot: fmt.Sprintf("%s/vm", cfg.StateRootDir),
+	}, containerd, fs)
 
 	return providers, nil
 }
