@@ -28,6 +28,7 @@ type HacConfig struct {
 		Kernel    string
 		Drive     string
 		Interface string
+		Ref       string
 	}
 }
 
@@ -85,6 +86,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 			RootfsPath: &hacConfig.Hardware.Drive,
 			GuestMac:   &guestMac,
 			HostNetDev: &hacConfig.Hardware.Interface,
+			ImageRef:   &hacConfig.Hardware.Ref,
 			Provider:   cfg.DefaultVMProvider,
 		},
 	}

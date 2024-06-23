@@ -68,8 +68,12 @@ func (r *RuncService) Start(ctx context.Context, vm *models.MicroVM) error {
 
 	cioCreator := cio.NewCreator(cio.WithStreams(&bytes.Buffer{}, stdOutFile, stdErrFile))
 
-	containerId, err := r.containerd.CreateContainer(ctx, "", cioCreator)
+	containerId, err := r.containerd.CreateContainer(ctx, vm.Spec.ImageRef, cioCreator)
 	r.idToContainer[vm.ID.String()] = containerId
+
+	if err != nil {
+		return fmt.Errorf("error creating container: %w", err)
+	}
 
 	return nil
 }
