@@ -1,26 +1,13 @@
 package network
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"net"
 	"strconv"
 	"strings"
 
 	"github.com/vishvananda/netlink"
 	"vistara-node/pkg/models"
-)
-
-const (
-	ifaceLength       = 7
-	retryGenerate     = 5
-	randomBytesLength = 32
-	prefix            = "fl"
-	tapPrefix         = "tap"
-	// It's vtap only to save space.
-	macvtapPrefix = "vtap"
 )
 
 func GetTapDetails(index int) models.TapDetails {
@@ -73,13 +60,4 @@ func NewIfaceIdx() (int, error) {
 	}
 
 	return highestLink + 1, nil
-}
-
-func generateRandomName(prefix string) (string, error) {
-	id := make([]byte, randomBytesLength)
-	if _, err := io.ReadFull(rand.Reader, id); err != nil {
-		return "", fmt.Errorf("random generator error: %s", err.Error())
-	}
-
-	return prefix + hex.EncodeToString(id)[:ifaceLength], nil
 }

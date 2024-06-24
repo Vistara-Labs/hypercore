@@ -1,9 +1,5 @@
 package containerd
 
-const (
-	supportedSnapshotters = "overlayfs,native,devmapper"
-)
-
 // Config holds the containerd configuration.
 type Config struct {
 	// SnapshotterKernel is the name of the containerd snapshotter to use for kernel images.

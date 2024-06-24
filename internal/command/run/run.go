@@ -15,7 +15,6 @@ import (
 	grpcapi "vistara-node/pkg/api"
 	vm1 "vistara-node/pkg/api/services/microvm"
 
-	"vistara-node/pkg/app"
 	"vistara-node/pkg/containerd"
 	"vistara-node/pkg/defaults"
 	"vistara-node/pkg/flags"
@@ -149,10 +148,6 @@ func run(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-func eventSvcFromScope(p2 *ports.Collection) ports.EventService {
-	return p2.EventService
-}
-
 func InitializePorts(cfg *config.Config) (*ports.Collection, error) {
 	config2 := containerdConfig(cfg)
 
@@ -185,14 +180,6 @@ func InitializePorts(cfg *config.Config) (*ports.Collection, error) {
 	collection := appPorts(microVMRepository, v, eventService)
 
 	return collection, nil
-}
-
-func appConfig(cfg *config.Config) *app.Config {
-	return &app.Config{
-		RootStateDir:    cfg.StateRootDir,
-		MaximumRetry:    3,
-		DefaultProvider: cfg.DefaultVMProvider,
-	}
 }
 
 func appPorts(

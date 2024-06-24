@@ -208,15 +208,3 @@ func (n *networkService) getIface(name string) (bool, netlink.Link, error) {
 
 	return true, link, nil
 }
-
-func (n *networkService) getParentIfaceName(input ports.IfaceCreateInput) string {
-	if input.Type == models.IfaceTypeMacvtap {
-		return n.parentDeviceName
-	}
-
-	if input.BridgeName != "" {
-		return input.BridgeName
-	}
-
-	return n.bridgeName
-}

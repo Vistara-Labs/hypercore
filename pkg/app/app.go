@@ -84,7 +84,7 @@ func (a *App) Delete(ctx context.Context, vmid models.VMID) error {
 		UID:       vmid.UID(),
 	})
 	if err != nil {
-		return fmt.Errorf("Getting MicroVM specs: %w", err)
+		return fmt.Errorf("getting MicroVM specs: %w", err)
 	}
 
 	logger.Infof("hypervisor provider is %v", vm.Spec.Provider)

@@ -60,7 +60,3 @@ func convertModelToMicroVMSpec(mvm *models.MicroVM) *types.MicroVMSpec {
 
 	return converted
 }
-
-func String(s string) *string {
-	return &s
-}

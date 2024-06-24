@@ -42,26 +42,6 @@ func NewVMID(name, namespace, uid string) (*VMID, error) {
 	}, nil
 }
 
-// NewVMIDForce creates a new VMID from a name, namespace, and UID, but without
-// any checks. In case we want to create a new UID, but ignore checks.
-func NewVMIDForce(name, namespace, uid string) *VMID {
-	return &VMID{
-		name:      name,
-		namespace: namespace,
-		uid:       uid,
-	}
-}
-
-// NewVMID creates a new VMID from a string.
-func NewVMIDFromString(id string) (*VMID, error) {
-	ns, name, uid, err := splitVMIDFromString(id)
-	if err != nil {
-		return nil, fmt.Errorf("populating id from string: %w", err)
-	}
-
-	return NewVMID(name, ns, uid)
-}
-
 // Name returns the name part of the VMID.
 func (v *VMID) Name() string {
 	return v.name
