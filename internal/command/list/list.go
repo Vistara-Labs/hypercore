@@ -47,15 +47,19 @@ func run(ctx context.Context, cfg *config.Config) error {
 	}
 
 	for _, vm := range response.Microvm {
-		linkIp, err := network.GetLinkIp(vm.RuntimeData.NetworkInterface)
-		if err != nil {
-			return err
+		if vm.RuntimeData != nil {
+			linkIp, err := network.GetLinkIp(vm.RuntimeData.NetworkInterface)
+			if err != nil {
+				return err
+			}
+
+			ip4 := linkIp.To4()
+			ip4[3] = ip4[3] - 1
+
+			fmt.Printf("VM %s, SSH Address %s\n", vm.Microvm.Spec.Id, ip4.String())
+		} else {
+			fmt.Printf("VM %s\n", vm.Microvm.Spec.Id)
 		}
-
-		ip4 := linkIp.To4()
-		ip4[3] = ip4[3] - 1
-
-		fmt.Printf("VM %s, SSH Address %s\n", vm.Microvm.Spec.Id, ip4.String())
 	}
 
 	return nil

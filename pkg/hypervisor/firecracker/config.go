@@ -11,11 +11,6 @@ import (
 	"vistara-node/pkg/network"
 )
 
-// taken from flintlock: https://github.com/weaveworks-liquidmetal/flintlock
-const (
-	cloudInitNetVersion = 2
-)
-
 type ConfigOption func(cfg *VmmConfig) error
 
 func CreateConfig(opts ...ConfigOption) (*VmmConfig, error) {
@@ -70,7 +65,7 @@ func WithMicroVM(vm *models.MicroVM, status *models.NetworkInterfaceStatus) Conf
 
 		tapIdx, err := strconv.Atoi(strings.ReplaceAll(status.HostDeviceName, "hypercore-", ""))
 		if err != nil {
-			return fmt.Errorf("Invalid interface %s: %w", status.HostDeviceName, err)
+			return fmt.Errorf("invalid interface %s: %w", status.HostDeviceName, err)
 		}
 
 		tapDetails := network.GetTapDetails(tapIdx)
@@ -145,25 +140,4 @@ func WithState(vmState State) ConfigOption {
 
 		return nil
 	}
-}
-
-func createNetworkIface(iface *models.NetworkInterface, status *models.NetworkInterfaceStatus) *NetworkInterfaceConfig {
-	macAddr := iface.GuestMAC
-	hostDevName := status.HostDeviceName
-
-	if iface.Type == models.IfaceTypeMacvtap {
-		hostDevName = fmt.Sprintf("/dev/tap%d", status.Index)
-
-		if macAddr == "" {
-			macAddr = status.MACAddress
-		}
-	}
-
-	netInt := &NetworkInterfaceConfig{
-		IfaceID:     iface.GuestDeviceName,
-		HostDevName: hostDevName,
-		GuestMAC:    macAddr,
-	}
-
-	return netInt
 }

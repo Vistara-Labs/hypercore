@@ -1,7 +1,6 @@
 package flags
 
 import (
-	"fmt"
 	"vistara-node/internal/config"
 	"vistara-node/pkg/defaults"
 	"vistara-node/pkg/hypervisor/firecracker"
@@ -32,10 +31,16 @@ const (
 	debugEndpointFlag         = "debug-endpoint"
 	cloudHypervisorBinFlag    = "cloudhypervisor-bin"
 	cloudHypervisorDetachFlag = "cloudhypervisor-detach"
+	vmProviderFlag            = "provider"
 )
 
 // Adds spawning-related arguments to the command
 func AddSpawnFlags(cmd *cobra.Command, cfg *config.Config) {
+	cmd.Flags().StringVar(&cfg.DefaultVMProvider,
+		vmProviderFlag,
+		firecracker.HypervisorName,
+		"VM Provider to use")
+
 	cmd.Flags().StringVar(&cfg.GRPCAPIEndpoint,
 		grpcEndpointFlag,
 		defaults.GRPCAPIEndpoint,
@@ -99,44 +104,10 @@ func AddNetworkFlagsToCommand(cmd *cobra.Command, cfg *config.Config) error {
 	return nil
 }
 
-// AddHiddenFlagsToCommand will add hidden flags to the supplied command.
-func AddHiddenFlagsToCommand(cmd *cobra.Command, cfg *config.Config) error {
-	cmd.Flags().BoolVar(&cfg.DisableReconcile,
-		disableReconcileFlag,
-		false,
-		"Set to true to stop the reconciler running")
-
-	cmd.Flags().IntVar(&cfg.MaximumRetry,
-		maximumRetryFlag,
-		defaults.MaximumRetry,
-		"Number of times to retry failed reconciliation")
-
-	cmd.Flags().BoolVar(&cfg.DisableAPI,
-		disableAPIFlag,
-		false,
-		"Set to true to stop the api server running")
-
-	if err := cmd.Flags().MarkHidden(disableReconcileFlag); err != nil {
-		return fmt.Errorf("setting %s as hidden: %w", disableReconcileFlag, err)
-	}
-
-	if err := cmd.Flags().MarkHidden(maximumRetryFlag); err != nil {
-		return fmt.Errorf("setting %s as hidden: %w", maximumRetryFlag, err)
-	}
-
-	if err := cmd.Flags().MarkHidden(disableAPIFlag); err != nil {
-		return fmt.Errorf("setting %s as hidden: %w", disableAPIFlag, err)
-	}
-
-	return nil
-}
-
 // AddMicrovmProviderFlagsToCommand will add the microvm provider flags to the supplied command
 func AddMicrovmProviderFlagsToCommand(cmd *cobra.Command, cfg *config.Config) {
 	addFirecrackerFlagsToCommand(cmd, cfg)
-	// addCloudHypervisorFlagsToCommand(cmd, cfg)
-	cmd.Flags().StringVar(&cfg.DefaultVMProvider, "default-provider",
-		firecracker.HypervisorName, "The name of the vm provider to use by default if not supplied in the create request.")
+	addCloudHypervisorFlagsToCommand(cmd, cfg)
 }
 
 // AddContainerDFlagsToCommand will add the containerd specific flags to the supplied cobra command.

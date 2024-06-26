@@ -1,35 +1,17 @@
 package network
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"net"
 	"strconv"
 	"strings"
 
 	"github.com/vishvananda/netlink"
+	"vistara-node/pkg/models"
 )
 
-const (
-	ifaceLength       = 7
-	retryGenerate     = 5
-	randomBytesLength = 32
-	prefix            = "fl"
-	tapPrefix         = "tap"
-	// It's vtap only to save space.
-	macvtapPrefix = "vtap"
-)
-
-type TapDetails struct {
-	VmIp  net.IP
-	TapIp net.IP
-	Mask  net.IP
-}
-
-func GetTapDetails(index int) TapDetails {
-	return TapDetails{
+func GetTapDetails(index int) models.TapDetails {
+	return models.TapDetails{
 		VmIp:  net.IPv4(169, 254, byte(((4*index)+1)/256), byte(((4*index)+1)%256)),
 		TapIp: net.IPv4(169, 254, byte(((4*index)+2)/256), byte(((4*index)+2)%256)),
 		Mask:  net.IPv4(255, 255, 255, 252),
@@ -54,10 +36,10 @@ func GetLinkIp(linkName string) (net.IP, error) {
 	return routes[0].Src, nil
 }
 
-func NewIfaceName() (string, error) {
+func NewIfaceIdx() (int, error) {
 	links, err := netlink.LinkList()
 	if err != nil {
-		return "", fmt.Errorf("failed to enumerate links: %s", err)
+		return 0, fmt.Errorf("failed to enumerate links: %s", err)
 	}
 
 	highestLink := -1
@@ -68,7 +50,7 @@ func NewIfaceName() (string, error) {
 			idxStr := strings.ReplaceAll(link.Attrs().Name, "hypercore-", "")
 			idx, err := strconv.Atoi(idxStr)
 			if err != nil {
-				return "", fmt.Errorf("got invalid link %s: %s", link.Attrs().Name, err)
+				return 0, fmt.Errorf("got invalid link %s: %s", link.Attrs().Name, err)
 			}
 
 			if idx > highestLink {
@@ -77,14 +59,5 @@ func NewIfaceName() (string, error) {
 		}
 	}
 
-	return "hypercore-" + strconv.Itoa(highestLink+1), nil
-}
-
-func generateRandomName(prefix string) (string, error) {
-	id := make([]byte, randomBytesLength)
-	if _, err := io.ReadFull(rand.Reader, id); err != nil {
-		return "", fmt.Errorf("random generator error: %s", err.Error())
-	}
-
-	return prefix + hex.EncodeToString(id)[:ifaceLength], nil
+	return highestLink + 1, nil
 }

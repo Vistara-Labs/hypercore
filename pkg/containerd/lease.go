@@ -40,18 +40,6 @@ func getExistingOrCreateLease(ctx context.Context, name string, manager leases.M
 	return &lease, nil
 }
 
-func deleteLease(ctx context.Context, owner string, client Client) error {
-	leaseName := getLeaseNameForOwner(owner)
-	lease := leases.Lease{ID: leaseName}
-
-	err := client.LeasesService().Delete(ctx, lease, leases.SynchronousDelete)
-	if err != nil {
-		return fmt.Errorf("delete lease %s: %w", leaseName, err)
-	}
-
-	return nil
-}
-
 func getLeaseNameForOwner(owner string) string {
 	return fmt.Sprintf("hypercore/%s", owner)
 }

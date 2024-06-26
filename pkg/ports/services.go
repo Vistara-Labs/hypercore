@@ -70,9 +70,6 @@ type EventEnvelope struct {
 type ImageService interface {
 	// Pull will get (i.e. pull) the image for a specific owner.
 	Pull(ctx context.Context, input *ImageSpec) error
-	// PullAndMount will get (i.e. pull) the image for a specific owner and then
-	// make it available via a mount point.
-	PullAndMount(ctx context.Context, input *ImageMountSpec) ([]models.Mount, error)
 	// Exists checks if the image already exists on the machine.
 	Exists(ctx context.Context, input *ImageSpec) (bool, error)
 	// IsMounted checks if the image is pulled and mounted.
@@ -92,8 +89,6 @@ type ImageMountSpec struct {
 	ImageName string
 	// Owner is the name of the owner of the image.
 	Owner string
-	// Use is an indicator of what the image will be used for.
-	Use models.ImageUse
 	// OwnerUsageID is an identifier from the owner.
 	OwnerUsageID string
 }
@@ -123,6 +118,8 @@ type IfaceCreateInput struct {
 	Attach bool
 	// BridgeName is the name of the bridge to attach to. Only if this is a tap device and attach is true.
 	BridgeName string
+	// IP to bind the interface to
+	IP4 string
 }
 
 type IfaceDetails struct {

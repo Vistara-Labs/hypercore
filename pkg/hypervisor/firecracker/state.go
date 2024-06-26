@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"vistara-node/pkg/defaults"
 	"vistara-node/pkg/hypervisor/shared"
@@ -153,7 +153,7 @@ func (s *fsState) readJSONFile(cfg interface{}, inputFile string) error {
 		return fmt.Errorf("opening file %s: %w", inputFile, err)
 	}
 
-	data, err := ioutil.ReadAll(file)
+	data, err := io.ReadAll(file)
 	if err != nil {
 		return fmt.Errorf("reading file %s: %w", inputFile, err)
 	}

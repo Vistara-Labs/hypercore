@@ -28,6 +28,7 @@ type HacConfig struct {
 		Kernel    string
 		Drive     string
 		Interface string
+		Ref       string
 	}
 }
 
@@ -81,10 +82,12 @@ func run(ctx context.Context, cfg *config.Config) error {
 			Id:         vmUUID,
 			Vcpu:       hacConfig.Hardware.Cores,
 			MemoryInMb: hacConfig.Hardware.Memory,
-			KernelPath: hacConfig.Hardware.Kernel,
-			RootfsPath: hacConfig.Hardware.Drive,
-			GuestMac:   guestMac,
-			HostNetDev: hacConfig.Hardware.Interface,
+			KernelPath: &hacConfig.Hardware.Kernel,
+			RootfsPath: &hacConfig.Hardware.Drive,
+			GuestMac:   &guestMac,
+			HostNetDev: &hacConfig.Hardware.Interface,
+			ImageRef:   &hacConfig.Hardware.Ref,
+			Provider:   cfg.DefaultVMProvider,
 		},
 	}
 

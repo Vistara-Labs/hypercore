@@ -7,14 +7,19 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
+	"vistara-node/pkg/defaults"
 	"vistara-node/pkg/errors"
 	"vistara-node/pkg/log"
 	"vistara-node/pkg/models"
 	"vistara-node/pkg/ports"
 
 	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/containerd/containerd/oci"
+	"github.com/google/uuid"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 
 	// v12 "github.com/google/go-containerregistry/pkg/v1"
@@ -34,17 +39,24 @@ func NewMicroVMRepository(cfg *Config) (ports.MicroVMRepository, error) {
 
 func NewVMRepoWithClient(cfg *Config, client *containerd.Client) ports.MicroVMRepository {
 	return &containerdRepo{
-		client: client,
-		config: cfg,
-		locks:  make(map[string]*sync.RWMutex),
+		client:       client,
+		config:       cfg,
+		containerMap: make(map[string]RunningContainer),
+		locks:        make(map[string]*sync.RWMutex),
 	}
 }
 
+type RunningContainer struct {
+	ExitStatusChan <-chan containerd.ExitStatus
+	Task           containerd.Task
+}
+
 type containerdRepo struct {
-	client  *containerd.Client
-	config  *Config
-	locks   map[string]*sync.RWMutex
-	locksMu sync.Mutex
+	client       *containerd.Client
+	config       *Config
+	containerMap map[string]RunningContainer
+	locks        map[string]*sync.RWMutex
+	locksMu      sync.Mutex
 }
 
 // Saves the microvm spec to containerd and returns the microvm
@@ -113,7 +125,7 @@ func (r *containerdRepo) Save(ctx context.Context, microvm *models.MicroVM) (*mo
 
 // Delete implements ports.MicroVMRepository.
 func (r *containerdRepo) Delete(ctx context.Context, options ports.RepositoryGetOptions) error {
-    namespaceCtx := namespaces.WithNamespace(ctx, r.config.Namespace)
+	namespaceCtx := namespaces.WithNamespace(ctx, r.config.Namespace)
 	spec, err := r.findDigestForSpec(namespaceCtx, options)
 	if err != nil || spec == nil {
 		return fmt.Errorf("failed to find digest: %w", err)
@@ -129,6 +141,98 @@ func (r *containerdRepo) Delete(ctx context.Context, options ports.RepositoryGet
 // Exists implements ports.MicroVMRepository.
 func (*containerdRepo) Exists(ctx context.Context, vmid models.VMID) (bool, error) {
 	panic("unimplemented")
+}
+
+func (r *containerdRepo) CreateContainer(ctx context.Context, ref string, cioCreator cio.Creator) (string, error) {
+	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
+
+	image, err := r.client.Pull(namespaceCtx, ref, containerd.WithPullUnpack)
+	if err != nil {
+		return "", fmt.Errorf("failed to pull image %s: %w", ref, err)
+	}
+
+	// We don't want the context stored internally to get cancelled
+	// when this request completes
+	namespaceCtx = namespaces.WithNamespace(context.Background(), r.config.ContainerNamespace)
+
+	containerId := uuid.NewString()
+
+	container, err := r.client.NewContainer(
+		namespaceCtx,
+		containerId,
+		containerd.WithImage(image),
+		containerd.WithNewSnapshot(uuid.NewString(), image),
+		containerd.WithNewSpec(oci.WithImageConfig(image)),
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to create new container %s: %w", containerId, err)
+	}
+
+	cleanup := true
+
+	defer func() {
+		if cleanup {
+			container.Delete(namespaceCtx, containerd.WithSnapshotCleanup)
+		}
+	}()
+
+	task, err := container.NewTask(namespaceCtx, cioCreator)
+	if err != nil {
+		return "", fmt.Errorf("failed to start task for container %s: %w", containerId, err)
+	}
+
+	defer func() {
+		if cleanup {
+			task.Delete(namespaceCtx)
+		}
+	}()
+
+	exitStatusChan, err := task.Wait(namespaceCtx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get exit status chan for container %s task: %w", containerId, err)
+	}
+
+	err = task.Start(namespaceCtx)
+	if err != nil {
+		return "", fmt.Errorf("failed to start task for container %s: %w", containerId, err)
+	}
+
+	// TODO lock
+	r.containerMap[containerId] = RunningContainer{
+		ExitStatusChan: exitStatusChan,
+		Task:           task,
+	}
+
+	cleanup = false
+	return containerId, nil
+}
+
+func (r *containerdRepo) DeleteContainer(ctx context.Context, containerId string) (uint32, error) {
+	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
+
+	container, exists := r.containerMap[containerId]
+	if !exists {
+		return 0, fmt.Errorf("container %s not found", containerId)
+	}
+
+	err := container.Task.Kill(namespaceCtx, syscall.SIGTERM)
+	if err != nil {
+		return 0, fmt.Errorf("failed to kill task: %w", err)
+	}
+
+	// TODO lock
+	delete(r.containerMap, containerId)
+
+	status := <-container.ExitStatusChan
+
+	code, _, err := status.Result()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get exit status: %w", err)
+	}
+
+	log.GetLogger(ctx).Infof("container %s exited with status %d", containerId, code)
+
+	return code, nil
 }
 
 // Get implements ports.MicroVMRepository.
@@ -161,7 +265,10 @@ func (r *containerdRepo) Get(ctx context.Context, options ports.RepositoryGetOpt
 // GetAll implements ports.MicroVMRepository.
 func (r *containerdRepo) GetAll(ctx context.Context) ([]*models.MicroVM, error) {
 	namespaceCtx := namespaces.WithNamespace(ctx, r.config.Namespace)
-	digests, err := r.findDigestForSpec(namespaceCtx, ports.RepositoryGetOptions{})
+	// Make sure we don't try to fetch from the container namespace
+	digests, err := r.findDigestForSpec(namespaceCtx, ports.RepositoryGetOptions{
+		Namespace: defaults.MicroVMNamespace,
+	})
 
 	if err != nil {
 		return nil, fmt.Errorf("finding content in store: %w", err)
@@ -231,7 +338,7 @@ func (r *containerdRepo) getWithDigest(ctx context.Context, metadigest *digest.D
 		Digest: *metadigest,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("reading content %s: %w", metadigest, "ErrReadingContent")
+		return nil, fmt.Errorf("reading content %s: %w", metadigest, ErrReadingContent)
 	}
 
 	microvm := &models.MicroVM{}

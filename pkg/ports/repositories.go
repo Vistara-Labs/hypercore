@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"github.com/containerd/containerd/cio"
 	"vistara-node/pkg/models"
 )
 
@@ -25,4 +26,8 @@ type MicroVMRepository interface {
 	GetAll(ctx context.Context) ([]*models.MicroVM, error)
 	// Exists checks to see if the microvm spec exists in the repo.
 	Exists(ctx context.Context, vmid models.VMID) (bool, error)
+	// Returns a container ID, IO streams are defined in cioCreator
+	CreateContainer(ctx context.Context, ref string, cioCreator cio.Creator) (string, error)
+	// Returns an exit status
+	DeleteContainer(ctx context.Context, containerId string) (uint32, error)
 }
