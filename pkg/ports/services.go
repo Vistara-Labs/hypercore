@@ -21,6 +21,7 @@ type MicroVMService interface {
 	Start(ctx context.Context, vm *models.MicroVM) error
 	Stop(ctx context.Context, vm *models.MicroVM) error
 	GetRuntimeData(ctx context.Context, vm *models.MicroVM) (*types.MicroVMRuntimeData, error)
+	Pid(ctx context.Context, vm *models.MicroVM) (int, error)
 	State(ctx context.Context, id string) (MicroVMState, error)
 	Metrics(ctx context.Context, id models.VMID) (MachineMetrics, error)
 }

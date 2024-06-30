@@ -55,7 +55,7 @@ func WithMicroVM(vm *models.MicroVM, status *models.NetworkInterfaceStatus) Conf
 		blockDeviceCfg := BlockDeviceConfig{
 			ID:           vm.Spec.RootfsPath,
 			IsReadOnly:   false,
-			IsRootDevice: true,
+			IsRootDevice: false,
 			PathOnHost:   vm.Spec.RootfsPath,
 			CacheType:    CacheTypeUnsafe,
 		}

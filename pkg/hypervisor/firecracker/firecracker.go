@@ -190,6 +190,11 @@ func (f *FirecrackerService) GetRuntimeData(ctx context.Context, vm *models.Micr
 	}, nil
 }
 
+func (f *FirecrackerService) Pid(ctx context.Context, vm *models.MicroVM) (int, error) {
+	vmState := NewState(vm.ID, f.config.StateRoot, f.fs)
+    return vmState.PID()
+}
+
 func (f *FirecrackerService) Stop(ctx context.Context, vm *models.MicroVM) error {
 	vmState := NewState(vm.ID, f.config.StateRoot, f.fs)
 
