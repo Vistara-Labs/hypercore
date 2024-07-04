@@ -10,6 +10,7 @@ require (
 	github.com/diskfs/go-diskfs v1.4.0
 	github.com/docker/docker v27.0.0+incompatible
 	github.com/docker/go-units v0.5.0
+	github.com/firecracker-microvm/firecracker-containerd v0.0.0-20240528215832-a3e402334342
 	github.com/firecracker-microvm/firecracker-go-sdk v1.0.0
 	github.com/google/uuid v1.6.0
 	github.com/lorenzosaino/go-sysctl v0.3.1
@@ -105,7 +106,7 @@ require (
 )
 
 require (
-	github.com/containerd/containerd v1.7.13
+	github.com/containerd/containerd v1.7.16
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/google/wire v0.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
