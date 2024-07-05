@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"golang.org/x/sys/unix"
 	"net"
 	"os"
+	"time"
 
 	taskAPI "github.com/containerd/containerd/api/runtime/task/v2"
 	"github.com/containerd/containerd/events/exchange"
+	"github.com/containerd/containerd/protobuf"
 	"github.com/containerd/containerd/runtime/v2/shim"
 	"github.com/containerd/ttrpc"
 	"github.com/firecracker-microvm/firecracker-containerd/eventbridge"
@@ -44,15 +47,8 @@ type HyperShim struct {
 	HypervisorState *HypervisorState
 }
 
-func (s *HyperShim) Stop(ctx context.Context, id string) (opts shim.StopStatus) {
-	return shim.StopStatus{
-		// Pid: s.HypervisorState.vmSvc.Pid(),
-		// ExitedAt will be 0
-	}
-}
-
 func (s *HyperShim) State(ctx context.Context, req *taskAPI.StateRequest) (*taskAPI.StateResponse, error) {
-	return nil, errors.New("State")
+	return s.HypervisorState.agentClient.State(ctx, req)
 }
 
 func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) (*taskAPI.CreateTaskResponse, error) {
@@ -104,9 +100,11 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 		},
 	}
 
-	if err := vmSvc.Start(ctx, vm); err != nil {
-		return nil, fmt.Errorf("failed to start VM: %w", err)
-	}
+	/*
+		if err := vmSvc.Start(ctx, hypervisorState.vm); err != nil {
+			return nil, fmt.Errorf("failed to start VM: %w", err)
+		}
+	*/
 
 	// Temporarily using UNIX sockets for debugging
 	conn, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: "/tmp/agent.sock", Net: "unix"})
@@ -131,67 +129,70 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 }
 
 func (s *HyperShim) Start(ctx context.Context, req *taskAPI.StartRequest) (*taskAPI.StartResponse, error) {
-	return nil, errors.New("Start")
+	return s.HypervisorState.agentClient.Start(ctx, req)
 }
 
 func (s *HyperShim) Delete(ctx context.Context, req *taskAPI.DeleteRequest) (*taskAPI.DeleteResponse, error) {
-	return nil, errors.New("Delete")
+	return s.HypervisorState.agentClient.Delete(ctx, req)
 }
 
 func (s *HyperShim) Pids(ctx context.Context, req *taskAPI.PidsRequest) (*taskAPI.PidsResponse, error) {
-	return nil, errors.New("Pids")
+	return s.HypervisorState.agentClient.Pids(ctx, req)
 }
 
 func (s *HyperShim) Pause(ctx context.Context, req *taskAPI.PauseRequest) (*emptypb.Empty, error) {
-	return nil, errors.New("Pause")
+	return s.HypervisorState.agentClient.Pause(ctx, req)
 }
 
 func (s *HyperShim) Resume(ctx context.Context, req *taskAPI.ResumeRequest) (*emptypb.Empty, error) {
-	return nil, errors.New("Resume")
+	return s.HypervisorState.agentClient.Resume(ctx, req)
 }
 
 func (s *HyperShim) Checkpoint(ctx context.Context, req *taskAPI.CheckpointTaskRequest) (*emptypb.Empty, error) {
-	return nil, errors.New("Checkpoint")
+	return s.HypervisorState.agentClient.Checkpoint(ctx, req)
 }
 
 func (s *HyperShim) Kill(ctx context.Context, req *taskAPI.KillRequest) (*emptypb.Empty, error) {
-	return nil, errors.New("Kill")
+	return s.HypervisorState.agentClient.Kill(ctx, req)
 }
 
 func (s *HyperShim) Exec(ctx context.Context, req *taskAPI.ExecProcessRequest) (*emptypb.Empty, error) {
-	return nil, errors.New("Exec")
+	return s.HypervisorState.agentClient.Exec(ctx, req)
 }
 
 func (s *HyperShim) ResizePty(ctx context.Context, req *taskAPI.ResizePtyRequest) (*emptypb.Empty, error) {
-	return nil, errors.New("ResizePty")
+	return s.HypervisorState.agentClient.ResizePty(ctx, req)
 }
 
 func (s *HyperShim) CloseIO(ctx context.Context, req *taskAPI.CloseIORequest) (*emptypb.Empty, error) {
-	return nil, errors.New("CloseIO")
+	return s.HypervisorState.agentClient.CloseIO(ctx, req)
 }
 
 func (s *HyperShim) Update(ctx context.Context, req *taskAPI.UpdateTaskRequest) (*emptypb.Empty, error) {
-	return nil, errors.New("Update")
+	return s.HypervisorState.agentClient.Update(ctx, req)
 }
 
 func (s *HyperShim) Wait(ctx context.Context, req *taskAPI.WaitRequest) (*taskAPI.WaitResponse, error) {
-	return nil, errors.New("Wait")
+	return s.HypervisorState.agentClient.Wait(ctx, req)
 }
 
 func (s *HyperShim) Stats(ctx context.Context, req *taskAPI.StatsRequest) (*taskAPI.StatsResponse, error) {
-	return nil, errors.New("Stats")
+	return s.HypervisorState.agentClient.Stats(ctx, req)
 }
 
 func (s *HyperShim) Connect(ctx context.Context, req *taskAPI.ConnectRequest) (*taskAPI.ConnectResponse, error) {
-	return nil, errors.New("Connect")
+	return s.HypervisorState.agentClient.Connect(ctx, req)
 }
 
 func (s *HyperShim) Shutdown(ctx context.Context, req *taskAPI.ShutdownRequest) (*emptypb.Empty, error) {
-	return nil, errors.New("Shutdown")
+	return s.HypervisorState.agentClient.Shutdown(ctx, req)
 }
 
 func (s *HyperShim) Cleanup(ctx context.Context) (*taskAPI.DeleteResponse, error) {
-	return nil, errors.New("Cleanup")
+	return &taskAPI.DeleteResponse{
+		ExitedAt:   protobuf.ToTimestamp(time.Now()),
+		ExitStatus: 128 + uint32(unix.SIGKILL),
+	}, nil
 }
 
 func (s *HyperShim) StartShim(ctx context.Context, opts shim.StartOpts) (string, error) {
