@@ -60,7 +60,7 @@ func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM) erro
 	})
 	logger.Debugf("creating microvm inside firecracker start")
 
-	if vm.Spec.Kernel == "" || vm.Spec.RootfsPath == "" || vm.Spec.HostNetDev == "" || vm.Spec.GuestMAC == "" {
+	if vm.Spec.Kernel == "" || vm.Spec.RootfsPath == "" || vm.Spec.HostNetDev == "" || vm.Spec.GuestMAC == "" || vm.Spec.ImagePath == "" || vm.Spec.VSockPath == "" {
 		return errors.New("missing fields from model")
 	}
 
@@ -192,7 +192,7 @@ func (f *FirecrackerService) GetRuntimeData(ctx context.Context, vm *models.Micr
 
 func (f *FirecrackerService) Pid(ctx context.Context, vm *models.MicroVM) (int, error) {
 	vmState := NewState(vm.ID, f.config.StateRoot, f.fs)
-    return vmState.PID()
+	return vmState.PID()
 }
 
 func (f *FirecrackerService) Stop(ctx context.Context, vm *models.MicroVM) error {
