@@ -302,8 +302,6 @@ github.com/evanphx/json-patch v4.9.0+incompatible/go.mod h1:50XU6AFN0ol/bzJsmQLi
 github.com/fatih/color v1.7.0/go.mod h1:Zm6kSWBoL9eyXnKyktHP6abPY2pDugNf5KwzbycvMj4=
 github.com/felixge/httpsnoop v1.0.4 h1:NFTV2Zj1bL4mc9sqWACXbQFVBBg2W3GPvqp8/ESS2Wg=
 github.com/felixge/httpsnoop v1.0.4/go.mod h1:m8KPJKqk1gH5J9DgRY2ASl2lWCfGKXixSwevea8zH2U=
-github.com/firecracker-microvm/firecracker-containerd v0.0.0-20240528215832-a3e402334342 h1:l3rA1IHs+7tOPwPRH4bKEQQYOHnFosyUkrX7t3qHXvs=
-github.com/firecracker-microvm/firecracker-containerd v0.0.0-20240528215832-a3e402334342/go.mod h1:pHawm5mbsTXdkN72RVTtHBIi3/E938HWN3TJRF1itGw=
 github.com/firecracker-microvm/firecracker-go-sdk v1.0.0 h1:HTnxnX9pvQkQOHjv+TppzUyi2BNFL/7aegSlqIK/usY=
 github.com/firecracker-microvm/firecracker-go-sdk v1.0.0/go.mod h1:iXd7gqdwzvhB4VbNVMb70g/IY04fOuQbbBGM+PQEkgo=
 github.com/form3tech-oss/jwt-go v3.2.2+incompatible/go.mod h1:pbq4aXjuKjdthFRnoDwaVPLA+WlJuPGy+QneDUgJi2k=

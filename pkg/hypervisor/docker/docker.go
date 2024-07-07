@@ -96,6 +96,14 @@ func (d *DockerService) Stop(ctx context.Context, vm *models.MicroVM) error {
 	return nil
 }
 
+func (d *DockerService) Pid(ctx context.Context, vm *models.MicroVM) (int, error) {
+	panic("TODO")
+}
+
+func (d *DockerService) VSockPath(vm *models.MicroVM) string {
+	panic("Unsupported")
+}
+
 func (d *DockerService) State(ctx context.Context, id string) (ports.MicroVMState, error) {
 	return ports.MicroVMStateRunning, nil
 }

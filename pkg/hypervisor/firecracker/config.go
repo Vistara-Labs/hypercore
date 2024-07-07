@@ -25,7 +25,7 @@ func CreateConfig(opts ...ConfigOption) (*VmmConfig, error) {
 	return cfg, nil
 }
 
-func WithMicroVM(vm *models.MicroVM, status *models.NetworkInterfaceStatus) ConfigOption {
+func WithMicroVM(vm *models.MicroVM, status *models.NetworkInterfaceStatus, vsockPath string) ConfigOption {
 	return func(cfg *VmmConfig) error {
 		if vm == nil {
 			return errors.ErrSpecRequired
@@ -69,7 +69,7 @@ func WithMicroVM(vm *models.MicroVM, status *models.NetworkInterfaceStatus) Conf
 
 		cfg.VsockDevice = &VsockDeviceConfig{
 			GuestCID: 0,
-			UDSPath:  vm.Spec.VSockPath,
+			UDSPath:  vsockPath,
 		}
 
 		tapIdx, err := strconv.Atoi(strings.ReplaceAll(status.HostDeviceName, "hypercore-", ""))

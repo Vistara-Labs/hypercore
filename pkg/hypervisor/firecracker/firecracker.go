@@ -60,7 +60,7 @@ func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM) erro
 	})
 	logger.Debugf("creating microvm inside firecracker start")
 
-	if vm.Spec.Kernel == "" || vm.Spec.RootfsPath == "" || vm.Spec.HostNetDev == "" || vm.Spec.GuestMAC == "" || vm.Spec.ImagePath == "" || vm.Spec.VSockPath == "" {
+	if vm.Spec.Kernel == "" || vm.Spec.RootfsPath == "" || vm.Spec.HostNetDev == "" || vm.Spec.GuestMAC == "" || vm.Spec.ImagePath == "" {
 		return errors.New("missing fields from model")
 	}
 
@@ -82,7 +82,7 @@ func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM) erro
 		return fmt.Errorf("creating network interface %w", err)
 	}
 
-	config, err := CreateConfig(WithMicroVM(vm, status), WithState(vmState))
+	config, err := CreateConfig(WithMicroVM(vm, status, f.VSockPath(vm)), WithState(vmState))
 	if err != nil {
 		return fmt.Errorf("creating firecracker config: %w", err)
 	}
@@ -193,6 +193,10 @@ func (f *FirecrackerService) GetRuntimeData(ctx context.Context, vm *models.Micr
 func (f *FirecrackerService) Pid(ctx context.Context, vm *models.MicroVM) (int, error) {
 	vmState := NewState(vm.ID, f.config.StateRoot, f.fs)
 	return vmState.PID()
+}
+
+func (f *FirecrackerService) VSockPath(vm *models.MicroVM) string {
+	return NewState(vm.ID, f.config.StateRoot, f.fs).VSockPath()
 }
 
 func (f *FirecrackerService) Stop(ctx context.Context, vm *models.MicroVM) error {

@@ -111,6 +111,14 @@ func (r *RuncService) Stop(ctx context.Context, vm *models.MicroVM) error {
 	return nil
 }
 
+func (r *RuncService) Pid(ctx context.Context, vm *models.MicroVM) (int, error) {
+	panic("TODO")
+}
+
+func (r *RuncService) VSockPath(vm *models.MicroVM) string {
+	panic("Unsupported")
+}
+
 func (r *RuncService) State(ctx context.Context, id string) (ports.MicroVMState, error) {
 	return ports.MicroVMStateRunning, nil
 }

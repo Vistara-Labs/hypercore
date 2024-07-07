@@ -23,6 +23,7 @@ type MicroVMService interface {
 	GetRuntimeData(ctx context.Context, vm *models.MicroVM) (*types.MicroVMRuntimeData, error)
 	Pid(ctx context.Context, vm *models.MicroVM) (int, error)
 	State(ctx context.Context, id string) (MicroVMState, error)
+	VSockPath(vm *models.MicroVM) string
 	Metrics(ctx context.Context, id models.VMID) (MachineMetrics, error)
 }
 

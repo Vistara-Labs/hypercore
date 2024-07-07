@@ -38,7 +38,6 @@ type MicroVMSpec struct {
 	RootfsPath string `json:"rootfs_path" validate:"omitempty"`
 	ImagePath  string `json:"image_path" validate:"omitempty"`
 	GuestMAC   string `json:"guest_mac" validate:"omitempty"`
-	VSockPath  string `json:"vsock_path" validate:"omitempty"`
 	ImageRef   string `json:"image_ref" validate:"omitempty"`
 	// CreatedAt indicates the time the microvm was created at.
 	CreatedAt int64 `json:"created_at" validate:"omitempty,datetimeInPast"`

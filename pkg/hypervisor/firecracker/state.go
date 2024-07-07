@@ -20,6 +20,8 @@ type State interface {
 	PIDPath() string
 	SetPid(pid int) error
 
+	VSockPath() string
+
 	LogPath() string
 	MetricsPath() string
 	StdoutPath() string
@@ -62,6 +64,10 @@ func (s *fsState) PIDPath() string {
 
 func (s *fsState) PID() (int, error) {
 	return shared.PIDReadFromFile(s.PIDPath(), s.fs)
+}
+
+func (s *fsState) VSockPath() string {
+	return fmt.Sprintf("%s/firecracker.vsock", s.stateRoot)
 }
 
 func (s *fsState) LogPath() string {

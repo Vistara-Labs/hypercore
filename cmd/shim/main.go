@@ -17,11 +17,11 @@ import (
 	"github.com/containerd/ttrpc"
 	"github.com/firecracker-microvm/firecracker-containerd/eventbridge"
 	"github.com/firecracker-microvm/firecracker-containerd/proto"
+	"github.com/firecracker-microvm/firecracker-containerd/utils"
 	"github.com/firecracker-microvm/firecracker-go-sdk/vsock"
-	"github.com/sirupsen/logrus"
+	"github.com/google/uuid"
 	"github.com/spf13/afero"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
-	"vistara-node/internal/vm" // "github.com/firecracker-microvm/firecracker-containerd/internal/vm"
 
 	"vistara-node/pkg/hypervisor/firecracker"
 	"vistara-node/pkg/models"
@@ -47,11 +47,12 @@ type HypervisorState struct {
 type HyperShim struct {
 	id              string
 	stateRoot       string
+	shimCtx         context.Context
 	remotePublisher shim.Publisher
 	eventExchange   *exchange.Exchange
-	shimCtx         context.Context
+	taskManager     utils.TaskManager
 	vmReady         chan struct{}
-	HypervisorState *HypervisorState
+	vmState         *HypervisorState
 }
 
 func generateExtraData(jsonBytes []byte, options *types.Any) *proto.ExtraData {
@@ -75,50 +76,13 @@ func generateExtraData(jsonBytes []byte, options *types.Any) *proto.ExtraData {
 	}
 }
 
-func newIOProxy(logger *logrus.Entry, VSockPath, stdin, stdout, stderr string, extraData *proto.ExtraData) (vm.IOProxy, error) {
-	var ioConnectorSet vm.IOProxy
-
-	defaultVSockConnectTimeout := 5 * time.Second
-
-	if vm.IsAgentOnlyIO(stdout, logger) {
-		ioConnectorSet = vm.NewNullIOProxy()
-	} else {
-		var stdinConnectorPair *vm.IOConnectorPair
-		if stdin != "" {
-			stdinConnectorPair = &vm.IOConnectorPair{
-				ReadConnector:  vm.ReadFIFOConnector(stdin),
-				WriteConnector: vm.VSockDialConnector(defaultVSockConnectTimeout, VSockPath, extraData.StdinPort),
-			}
-		}
-
-		var stdoutConnectorPair *vm.IOConnectorPair
-		if stdout != "" {
-			stdoutConnectorPair = &vm.IOConnectorPair{
-				ReadConnector:  vm.VSockDialConnector(defaultVSockConnectTimeout, VSockPath, extraData.StdoutPort),
-				WriteConnector: vm.WriteFIFOConnector(stdout),
-			}
-		}
-
-		var stderrConnectorPair *vm.IOConnectorPair
-		if stderr != "" {
-			stderrConnectorPair = &vm.IOConnectorPair{
-				ReadConnector:  vm.VSockDialConnector(defaultVSockConnectTimeout, VSockPath, extraData.StderrPort),
-				WriteConnector: vm.WriteFIFOConnector(stderr),
-			}
-		}
-
-		ioConnectorSet = vm.NewIOConnectorProxy(stdinConnectorPair, stdoutConnectorPair, stderrConnectorPair)
-	}
-
-	return ioConnectorSet, nil
-}
-
 func (s *HyperShim) State(ctx context.Context, req *taskAPI.StateRequest) (*taskAPI.StateResponse, error) {
-	return s.HypervisorState.agentClient.State(ctx, req)
+	// TODO IO Proxy
+	return s.vmState.agentClient.State(ctx, req)
 }
 
 func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) (*taskAPI.CreateTaskResponse, error) {
-	if s.HypervisorState != nil {
+	if s.vmState != nil {
 		return nil, errors.New("Create called multiple times")
 	}
 
@@ -148,7 +112,7 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 		return nil, fmt.Errorf("got non-ext4 rootfs: %s", rootfs.Type)
 	}
 
-	vmid, err := models.NewVMID("hypercore", "", "0")
+	vmid, err := models.NewVMID("hypercore", "", uuid.NewString())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new VMID: %w", err)
 	}
@@ -157,15 +121,14 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 		ID:      *vmid,
 		Version: 2,
 		Spec: models.MicroVMSpec{
-			Kernel:   KernelImage,
-			GuestMAC: "06:00:AC:10:00:02",
+			Kernel:     KernelImage,
+			RootfsPath: RootfsPath,
+			ImagePath:  rootfs.Source,
 			// TODO pick up from metadata
 			VCPU:       1,
 			MemoryInMb: 1024,
 			HostNetDev: HostIface,
-			RootfsPath: RootfsPath,
-			ImagePath:  rootfs.Source,
-			VSockPath:  "/tmp/hypercore-" + s.id + ".sock",
+			GuestMAC:   "06:00:AC:10:00:02",
 		},
 	}
 
@@ -173,15 +136,17 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 		return nil, fmt.Errorf("failed to start VM: %w", err)
 	}
 
-	conn, err := vsock.DialContext(ctx, hypervisorState.vm.Spec.VSockPath, VSockPort, vsock.WithLogger(log.G(ctx)))
+	s.vmState = hypervisorState
+
+	conn, err := vsock.DialContext(ctx, vmSvc.VSockPath(s.vmState.vm), VSockPort, vsock.WithLogger(log.G(ctx)))
 	if err != nil {
 		return nil, err
 	}
 
 	rpcClient := ttrpc.NewClient(conn, ttrpc.WithOnClose(func() { _ = conn.Close() }))
 
-	hypervisorState.agentClient = taskAPI.NewTaskClient(rpcClient)
-	hypervisorState.eventBridgeClient = eventbridge.NewGetterClient(rpcClient)
+	s.vmState.agentClient = taskAPI.NewTaskClient(rpcClient)
+	s.vmState.eventBridgeClient = eventbridge.NewGetterClient(rpcClient)
 
 	// The image will be exposed as an unmounted block device
 	// in the guest, /dev/vdb (/dev/vda is the rootfs)
@@ -199,83 +164,82 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 		return nil, fmt.Errorf("failed to marshal options: %w", err)
 	}
 
-	ioConnectorSet, err := newIOProxy(log.G(ctx), hypervisorState.vm.Spec.VSockPath, req.Stdin, req.Stdout, req.Stderr, extraData)
+	ioConnectorSet, err := utils.NewIOProxy(log.G(ctx), s.vmState.vmSvc.VSockPath(s.vmState.vm), req.Stdin, req.Stdout, req.Stderr, extraData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create IOProxy: %w", err)
 	}
 
-	taskManager := vm.NewTaskManager(ctx, log.G(ctx))
-
-	res, err := taskManager.CreateTask(ctx, req, hypervisorState.agentClient, ioConnectorSet)
+	res, err := s.taskManager.CreateTask(ctx, req, s.vmState.agentClient, ioConnectorSet)
 
 	if err != nil {
 		return nil, err
 	}
 
-	s.HypervisorState = hypervisorState
 	close(s.vmReady)
 
 	return res, nil
 }
 
 func (s *HyperShim) Start(ctx context.Context, req *taskAPI.StartRequest) (*taskAPI.StartResponse, error) {
-	return s.HypervisorState.agentClient.Start(ctx, req)
+	return s.vmState.agentClient.Start(ctx, req)
 }
 
 func (s *HyperShim) Delete(ctx context.Context, req *taskAPI.DeleteRequest) (*taskAPI.DeleteResponse, error) {
-	return s.HypervisorState.agentClient.Delete(ctx, req)
+	return s.taskManager.DeleteProcess(ctx, req, s.vmState.agentClient)
 }
 
 func (s *HyperShim) Pids(ctx context.Context, req *taskAPI.PidsRequest) (*taskAPI.PidsResponse, error) {
-	return s.HypervisorState.agentClient.Pids(ctx, req)
+	return s.vmState.agentClient.Pids(ctx, req)
 }
 
 func (s *HyperShim) Pause(ctx context.Context, req *taskAPI.PauseRequest) (*emptypb.Empty, error) {
-	return s.HypervisorState.agentClient.Pause(ctx, req)
+	return s.vmState.agentClient.Pause(ctx, req)
 }
 
 func (s *HyperShim) Resume(ctx context.Context, req *taskAPI.ResumeRequest) (*emptypb.Empty, error) {
-	return s.HypervisorState.agentClient.Resume(ctx, req)
+	return s.vmState.agentClient.Resume(ctx, req)
 }
 
 func (s *HyperShim) Checkpoint(ctx context.Context, req *taskAPI.CheckpointTaskRequest) (*emptypb.Empty, error) {
-	return s.HypervisorState.agentClient.Checkpoint(ctx, req)
+	return s.vmState.agentClient.Checkpoint(ctx, req)
 }
 
 func (s *HyperShim) Kill(ctx context.Context, req *taskAPI.KillRequest) (*emptypb.Empty, error) {
-	return s.HypervisorState.agentClient.Kill(ctx, req)
+	return s.vmState.agentClient.Kill(ctx, req)
 }
 
 func (s *HyperShim) Exec(ctx context.Context, req *taskAPI.ExecProcessRequest) (*emptypb.Empty, error) {
-	return s.HypervisorState.agentClient.Exec(ctx, req)
+	// TODO IO Proxy
+	return s.vmState.agentClient.Exec(ctx, req)
 }
 
 func (s *HyperShim) ResizePty(ctx context.Context, req *taskAPI.ResizePtyRequest) (*emptypb.Empty, error) {
-	return s.HypervisorState.agentClient.ResizePty(ctx, req)
+	return s.vmState.agentClient.ResizePty(ctx, req)
 }
 
 func (s *HyperShim) CloseIO(ctx context.Context, req *taskAPI.CloseIORequest) (*emptypb.Empty, error) {
-	return s.HypervisorState.agentClient.CloseIO(ctx, req)
+	return s.vmState.agentClient.CloseIO(ctx, req)
 }
 
 func (s *HyperShim) Update(ctx context.Context, req *taskAPI.UpdateTaskRequest) (*emptypb.Empty, error) {
-	return s.HypervisorState.agentClient.Update(ctx, req)
+	return s.vmState.agentClient.Update(ctx, req)
 }
 
 func (s *HyperShim) Wait(ctx context.Context, req *taskAPI.WaitRequest) (*taskAPI.WaitResponse, error) {
-	return s.HypervisorState.agentClient.Wait(ctx, req)
+	return s.vmState.agentClient.Wait(ctx, req)
 }
 
 func (s *HyperShim) Stats(ctx context.Context, req *taskAPI.StatsRequest) (*taskAPI.StatsResponse, error) {
-	return s.HypervisorState.agentClient.Stats(ctx, req)
+	return s.vmState.agentClient.Stats(ctx, req)
 }
 
 func (s *HyperShim) Connect(ctx context.Context, req *taskAPI.ConnectRequest) (*taskAPI.ConnectResponse, error) {
-	return s.HypervisorState.agentClient.Connect(ctx, req)
+	return s.vmState.agentClient.Connect(ctx, req)
 }
 
 func (s *HyperShim) Shutdown(ctx context.Context, req *taskAPI.ShutdownRequest) (*emptypb.Empty, error) {
-	return s.HypervisorState.agentClient.Shutdown(ctx, req)
+	// TODO ensure hypervisor process is cleaned up
+	return s.vmState.agentClient.Shutdown(ctx, req)
 }
 
 func (s *HyperShim) Cleanup(ctx context.Context) (*taskAPI.DeleteResponse, error) {
@@ -349,7 +313,7 @@ func (s *HyperShim) startEventForwarders() {
 
 		<-s.vmReady
 
-		attachCh := eventbridge.Attach(s.shimCtx, s.HypervisorState.eventBridgeClient, s.eventExchange)
+		attachCh := eventbridge.Attach(s.shimCtx, s.vmState.eventBridgeClient, s.eventExchange)
 
 		err := <-attachCh
 		if err != nil {
@@ -370,9 +334,10 @@ func main() {
 			hyperShim := &HyperShim{
 				id:              id,
 				stateRoot:       "/tmp",
+				shimCtx:         ctx,
 				remotePublisher: remotePublisher,
 				eventExchange:   exchange.NewExchange(),
-				shimCtx:         ctx,
+				taskManager:     utils.NewTaskManager(ctx, log.G(ctx)),
 				vmReady:         make(chan struct{}),
 			}
 

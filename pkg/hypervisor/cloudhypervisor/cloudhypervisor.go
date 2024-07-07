@@ -261,6 +261,14 @@ func (c *CloudHypervisorService) Stop(ctx context.Context, vm *models.MicroVM) e
 	return nil
 }
 
+func (c *CloudHypervisorService) Pid(ctx context.Context, vm *models.MicroVM) (int, error) {
+	panic("TODO")
+}
+
+func (c *CloudHypervisorService) VSockPath(vm *models.MicroVM) string {
+	panic("Unsupported")
+}
+
 func (c *CloudHypervisorService) State(ctx context.Context, id string) (ports.MicroVMState, error) {
 	// Implement Firecracker status check logic
 	return ports.MicroVMStateRunning, nil
