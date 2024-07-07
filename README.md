@@ -26,6 +26,49 @@ cd hypercore
 make build
 ```
 
+### Containerd Setup
+
+`/etc/containerd/config.toml` must contain the following as we rely on the blockfile snapshotter:
+
+```
+version = 2
+
+[plugins]
+  [plugins.'io.containerd.snapshotter.v1.blockfile']
+    scratch_file = "/opt/containerd/blockfile"
+    root_path = "/opt/blocks"
+    fs_type = 'ext4'
+    mount_options = []
+    recreate_scratch = true
+```
+
+Build the shim and ensure it is present in `PATH` by symlinking to `/usr/local/bin`, the binary name must be the same as it is mandated by containerd:
+
+```
+$ go build -o containerd-shim-hypercore-example ./cmd/shim/main.go
+$ sudo ln -s $PWD/containerd-shim-hypercore-example /usr/local/bin/
+```
+
+Pull the desired image:
+
+```
+$ ctr image pull docker.io/library/alpine:latest
+```
+
+Create a container, specifying our shim as the runtime. This will create a snapshot block device in `/opt/blocks`:
+
+```
+$ sudo ctr container create --snapshotter blockfile --runtime hypercore.example docker.io/library/alpine:latest shim-test
+```
+
+Spawn the task, which will internally execute into our shim and spawn the container under a hypervisor
+
+```
+$ sudo ctr task start shim-test
+<execute commands>
+<ls>
+...
+```
 
 ### Running the Service
 
