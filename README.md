@@ -30,7 +30,7 @@ make build
 
 `/etc/containerd/config.toml` must contain the following as we rely on the blockfile snapshotter:
 
-```
+```toml
 version = 2
 
 [plugins]
@@ -42,28 +42,35 @@ version = 2
     recreate_scratch = true
 ```
 
+Initialize the base blockfile with an empty ext4 filesystem:
+
+```sh
+$ sudo dd if=/dev/zero of=/opt/containerd/blockfile bs=1M count=500
+$ sudo mkfs.ext4 /opt/containerd/blockfile
+```
+
 Build the shim and ensure it is present in `PATH` by symlinking to `/usr/local/bin`, the binary name must be the same as it is mandated by containerd:
 
-```
+```sh
 $ go build -o containerd-shim-hypercore-example ./cmd/shim/main.go
 $ sudo ln -s $PWD/containerd-shim-hypercore-example /usr/local/bin/
 ```
 
 Pull the desired image:
 
-```
+```sh
 $ ctr image pull docker.io/library/alpine:latest
 ```
 
 Create a container, specifying our shim as the runtime. This will create a snapshot block device in `/opt/blocks`:
 
-```
+```sh
 $ sudo ctr container create --snapshotter blockfile --runtime hypercore.example docker.io/library/alpine:latest shim-test
 ```
 
 Spawn the task, which will internally execute into our shim and spawn the container under a hypervisor
 
-```
+```sh
 $ sudo ctr task start shim-test
 <execute commands>
 <ls>
