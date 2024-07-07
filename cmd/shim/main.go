@@ -164,7 +164,7 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 		return nil, fmt.Errorf("failed to marshal options: %w", err)
 	}
 
-	ioConnectorSet, err := utils.NewIOProxy(log.G(ctx), s.vmState.vmSvc.VSockPath(s.vmState.vm), req.Stdin, req.Stdout, req.Stderr, extraData)
+	ioConnectorSet, err := utils.NewIOProxy(log.G(ctx), req.Stdin, req.Stdout, req.Stderr, s.vmState.vmSvc.VSockPath(s.vmState.vm), extraData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create IOProxy: %w", err)
 	}
