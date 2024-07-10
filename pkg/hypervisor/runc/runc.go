@@ -66,9 +66,10 @@ func (r *RuncService) Start(ctx context.Context, vm *models.MicroVM) error {
 		return fmt.Errorf("opening stderr file %s: %w", vmState.StderrPath(), err)
 	}
 
-	cioCreator := cio.NewCreator(cio.WithStreams(&bytes.Buffer{}, stdOutFile, stdErrFile))
-
-	containerId, err := r.containerd.CreateContainer(ctx, vm.Spec.ImageRef, cioCreator)
+	containerId, err := r.containerd.CreateContainer(ctx, ports.CreateContainerOpts{
+		ImageRef:   vm.Spec.ImageRef,
+		CioCreator: cio.NewCreator(cio.WithStreams(&bytes.Buffer{}, stdOutFile, stdErrFile)),
+	})
 	r.idToContainer[vm.ID.String()] = containerId
 
 	if err != nil {

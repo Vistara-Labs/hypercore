@@ -13,6 +13,17 @@ type RepositoryGetOptions struct {
 	UID       string
 }
 
+type CreateContainerOpts struct {
+	ImageRef    string
+	Snapshotter string
+	Runtime     struct {
+		Name    string
+		Options interface{}
+	}
+	Labels     map[string]string
+	CioCreator cio.Creator
+}
+
 // MicroVMRepository is the port definition for a microvm repository.
 type MicroVMRepository interface {
 	// Save will save the supplied microvm spec.
@@ -26,8 +37,8 @@ type MicroVMRepository interface {
 	GetAll(ctx context.Context) ([]*models.MicroVM, error)
 	// Exists checks to see if the microvm spec exists in the repo.
 	Exists(ctx context.Context, vmid models.VMID) (bool, error)
-	// Returns a container ID, IO streams are defined in cioCreator
-	CreateContainer(ctx context.Context, ref string, cioCreator cio.Creator) (string, error)
+	// Returns a container ID
+	CreateContainer(ctx context.Context, opts CreateContainerOpts) (string, error)
 	// Returns an exit status
 	DeleteContainer(ctx context.Context, containerId string) (uint32, error)
 }

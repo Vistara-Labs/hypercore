@@ -15,7 +15,6 @@ import (
 	"vistara-node/pkg/ports"
 
 	"github.com/containerd/containerd"
-	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
@@ -143,12 +142,23 @@ func (*containerdRepo) Exists(ctx context.Context, vmid models.VMID) (bool, erro
 	panic("unimplemented")
 }
 
-func (r *containerdRepo) CreateContainer(ctx context.Context, ref string, cioCreator cio.Creator) (string, error) {
+func (r *containerdRepo) CreateContainer(ctx context.Context, opts ports.CreateContainerOpts) (_ string, retErr error) {
 	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
 
-	image, err := r.client.Pull(namespaceCtx, ref, containerd.WithPullUnpack)
+	image, err := r.client.Pull(namespaceCtx, opts.ImageRef)
 	if err != nil {
-		return "", fmt.Errorf("failed to pull image %s: %w", ref, err)
+		return "", fmt.Errorf("failed to pull image %s: %w", opts.ImageRef, err)
+	}
+
+	unpacked, err := image.IsUnpacked(namespaceCtx, opts.Snapshotter)
+	if err != nil {
+		return "", fmt.Errorf("failed to check image unpack status: %w", err)
+	}
+
+	if !unpacked {
+		if err := image.Unpack(namespaceCtx, opts.Snapshotter); err != nil {
+			return "", fmt.Errorf("failed to unpack image with snapshotter %s: %w", opts.Snapshotter, err)
+		}
 	}
 
 	// We don't want the context stored internally to get cancelled
@@ -161,28 +171,29 @@ func (r *containerdRepo) CreateContainer(ctx context.Context, ref string, cioCre
 		namespaceCtx,
 		containerId,
 		containerd.WithImage(image),
+		containerd.WithSnapshotter(opts.Snapshotter),
 		containerd.WithNewSnapshot(uuid.NewString(), image),
+		containerd.WithRuntime(opts.Runtime.Name, opts.Runtime.Options),
+		containerd.WithContainerLabels(opts.Labels),
 		containerd.WithNewSpec(oci.WithImageConfig(image)),
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to create new container %s: %w", containerId, err)
 	}
 
-	cleanup := true
-
 	defer func() {
-		if cleanup {
+		if retErr != nil {
 			container.Delete(namespaceCtx, containerd.WithSnapshotCleanup)
 		}
 	}()
 
-	task, err := container.NewTask(namespaceCtx, cioCreator)
+	task, err := container.NewTask(namespaceCtx, opts.CioCreator)
 	if err != nil {
 		return "", fmt.Errorf("failed to start task for container %s: %w", containerId, err)
 	}
 
 	defer func() {
-		if cleanup {
+		if retErr != nil {
 			task.Delete(namespaceCtx)
 		}
 	}()
@@ -203,7 +214,6 @@ func (r *containerdRepo) CreateContainer(ctx context.Context, ref string, cioCre
 		Task:           task,
 	}
 
-	cleanup = false
 	return containerId, nil
 }
 
