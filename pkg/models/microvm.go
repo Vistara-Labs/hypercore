@@ -11,6 +11,13 @@ const (
 	DeletingState = "deleting"
 )
 
+type VmMetadata struct {
+	Provider  string `json:"provider"`
+	VCPU      int32  `json:"vcpu" validate:"required,gte=1"`
+	Memory    int32  `json:"memory" validate:"required,gte=128"`
+	HostIface string `json:"host_iface"`
+}
+
 // MicroVM represents a microvm machine that is created via a provider.
 type MicroVM struct {
 	// ID is the identifier for the microvm.

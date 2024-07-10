@@ -13,6 +13,7 @@ import (
 	"vistara-node/internal/config"
 	"vistara-node/pkg/containerd"
 	"vistara-node/pkg/flags"
+	"vistara-node/pkg/models"
 	"vistara-node/pkg/ports"
 )
 
@@ -96,6 +97,8 @@ func run(ctx context.Context, cfg *config.Config) error {
 			CioCreator: cio.NewCreator(),
 		})
 	case "firecracker":
+		fallthrough
+	case "cloudhypervisor":
 		id, err = repo.CreateContainer(ctx, ports.CreateContainerOpts{
 			ImageRef:    hacConfig.Hardware.Ref,
 			Snapshotter: "blockfile",
@@ -104,11 +107,15 @@ func run(ctx context.Context, cfg *config.Config) error {
 				Options interface{}
 			}{
 				Name: "hypercore.example",
+				Options: &models.VmMetadata{
+					Provider:  cfg.DefaultVMProvider,
+					VCPU:      hacConfig.Hardware.Cores,
+					Memory:    hacConfig.Hardware.Memory,
+					HostIface: hacConfig.Hardware.Interface,
+				},
 			},
 			CioCreator: cio.NewCreator(),
 		})
-	case "cloudhypervisor":
-		panic("TODO")
 	case "docker":
 		panic("TODO")
 	}

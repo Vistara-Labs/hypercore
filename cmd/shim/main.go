@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"golang.org/x/sys/unix"
@@ -15,12 +16,12 @@ import (
 	"github.com/containerd/containerd/protobuf/types"
 	"github.com/containerd/containerd/runtime/v2/shim"
 	"github.com/containerd/ttrpc"
-	"github.com/vistara-labs/firecracker-containerd/eventbridge"
-	"github.com/vistara-labs/firecracker-containerd/proto"
-	"github.com/vistara-labs/firecracker-containerd/utils"
 	"github.com/firecracker-microvm/firecracker-go-sdk/vsock"
 	"github.com/google/uuid"
 	"github.com/spf13/afero"
+	"github.com/vistara-labs/firecracker-containerd/eventbridge"
+	"github.com/vistara-labs/firecracker-containerd/proto"
+	"github.com/vistara-labs/firecracker-containerd/utils"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
 
 	"vistara-node/pkg/hypervisor/firecracker"
@@ -31,7 +32,7 @@ import (
 
 const ShimID = "hypercore.example"
 const HostIface = "ens2"
-const KernelImage = "/home/dev/hypercore/vmlinux-5.10.217"
+const KernelImage = "/home/dev/images/vmlinux-5.10.217"
 const RootfsPath = "/home/dev/firecracker-containerd/tools/image-builder/rootfs.img"
 const VSockPort = 10789
 
@@ -55,21 +56,17 @@ type HyperShim struct {
 	vmState         *HypervisorState
 }
 
-func generateExtraData(jsonBytes []byte, options *types.Any) *proto.ExtraData {
-	var opts *types.Any
-	if options != nil {
-		// Copy values of existing options over
-		valCopy := make([]byte, len(options.Value))
-		copy(valCopy, options.Value)
-		opts = &types.Any{
-			TypeUrl: options.TypeUrl,
-			Value:   valCopy,
-		}
-	}
+func parseOpts(options *types.Any) (models.VmMetadata, error) {
+	var metadata models.VmMetadata
+	err := json.Unmarshal(options.Value, &metadata)
 
+	return metadata, err
+}
+
+func generateExtraData(jsonBytes []byte) *proto.ExtraData {
 	return &proto.ExtraData{
 		JsonSpec:    jsonBytes,
-		RuncOptions: opts,
+		RuncOptions: nil,
 		StdinPort:   VSockPort + 1,
 		StdoutPort:  VSockPort + 2,
 		StderrPort:  VSockPort + 3,
@@ -117,6 +114,11 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 		return nil, fmt.Errorf("failed to create new VMID: %w", err)
 	}
 
+	meta, err := parseOpts(req.Options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse options: %w", err)
+	}
+
 	hypervisorState.vm = &models.MicroVM{
 		ID:      *vmid,
 		Version: 2,
@@ -124,10 +126,9 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 			Kernel:     KernelImage,
 			RootfsPath: RootfsPath,
 			ImagePath:  rootfs.Source,
-			// TODO pick up from metadata
-			VCPU:       1,
-			MemoryInMb: 1024,
-			HostNetDev: HostIface,
+			VCPU:       meta.VCPU,
+			MemoryInMb: meta.Memory,
+			HostNetDev: meta.HostIface,
 			GuestMAC:   "06:00:AC:10:00:02",
 		},
 	}
@@ -157,7 +158,7 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 		return nil, fmt.Errorf("failed to read config.json from %s: %w", req.Bundle, err)
 	}
 
-	extraData := generateExtraData(ociConfig, req.Options)
+	extraData := generateExtraData(ociConfig)
 
 	req.Options, err = protobuf.MarshalAnyToProto(extraData)
 	if err != nil {
