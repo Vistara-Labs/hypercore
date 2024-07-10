@@ -41,15 +41,12 @@ func AddSpawnFlags(cmd *cobra.Command, cfg *config.Config) {
 		firecracker.HypervisorName,
 		"VM Provider to use")
 
-	cmd.Flags().StringVar(&cfg.GRPCAPIEndpoint,
-		grpcEndpointFlag,
-		defaults.GRPCAPIEndpoint,
-		"The endpoint the gRPC server is listening on")
-
 	cmd.Flags().StringVar(&cfg.HACFile,
 		hacFileFlag,
 		defaults.HACFile,
 		"Path to hac.toml")
+
+	AddContainerDFlagsToCommand(cmd, cfg)
 }
 
 // AddGRPCServerFlagsToCommand will add gRPC server flags to the supplied command.
