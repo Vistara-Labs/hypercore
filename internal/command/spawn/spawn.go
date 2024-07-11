@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/containerd/containerd/cio"
+	"github.com/containerd/typeurl/v2"
 	"github.com/google/uuid"
 	toml "github.com/pelletier/go-toml/v2"
 	"github.com/spf13/cobra"
@@ -50,6 +51,8 @@ func NewCommand(cfg *config.Config) (*cobra.Command, error) {
 }
 
 func run(ctx context.Context, cfg *config.Config) error {
+	typeurl.Register(&models.MicroVMSpec{}, "models.MicroVMSpec")
+
 	repo, err := containerd.NewMicroVMRepository(&containerd.Config{
 		SnapshotterKernel:  cfg.CtrSnapshotterKernel,
 		SnapshotterVolume:  "",
@@ -78,9 +81,6 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 	fmt.Printf("Creating VM '%s' with config %+v\n", vmUUID, hacConfig)
 
-	// TODO Cores, Memory
-	// TODO recognize Docker backend
-
 	var id string
 
 	switch cfg.DefaultVMProvider {
@@ -107,11 +107,13 @@ func run(ctx context.Context, cfg *config.Config) error {
 				Options interface{}
 			}{
 				Name: "hypercore.example",
-				Options: &models.VmMetadata{
-					Provider:  cfg.DefaultVMProvider,
-					VCPU:      hacConfig.Hardware.Cores,
-					Memory:    hacConfig.Hardware.Memory,
-					HostIface: hacConfig.Hardware.Interface,
+				Options: &models.MicroVMSpec{
+					Provider:   cfg.DefaultVMProvider,
+					VCPU:       hacConfig.Hardware.Cores,
+					MemoryInMb: hacConfig.Hardware.Memory,
+					HostNetDev: hacConfig.Hardware.Interface,
+					Kernel:     hacConfig.Hardware.Kernel,
+					RootfsPath: hacConfig.Hardware.Drive,
 				},
 			},
 			CioCreator: cio.NewCreator(),

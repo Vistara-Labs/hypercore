@@ -16,6 +16,7 @@ import (
 	"github.com/containerd/containerd/protobuf/types"
 	"github.com/containerd/containerd/runtime/v2/shim"
 	"github.com/containerd/ttrpc"
+	"github.com/containerd/typeurl/v2"
 	"github.com/firecracker-microvm/firecracker-go-sdk/vsock"
 	"github.com/google/uuid"
 	"github.com/spf13/afero"
@@ -31,9 +32,6 @@ import (
 )
 
 const ShimID = "hypercore.example"
-const HostIface = "ens2"
-const KernelImage = "/home/dev/images/vmlinux-5.10.217"
-const RootfsPath = "/home/dev/firecracker-containerd/tools/image-builder/rootfs.img"
 const VSockPort = 10789
 
 type HypervisorState struct {
@@ -56,8 +54,8 @@ type HyperShim struct {
 	vmState         *HypervisorState
 }
 
-func parseOpts(options *types.Any) (models.VmMetadata, error) {
-	var metadata models.VmMetadata
+func parseOpts(options *types.Any) (models.MicroVMSpec, error) {
+	var metadata models.MicroVMSpec
 	err := json.Unmarshal(options.Value, &metadata)
 
 	return metadata, err
@@ -73,6 +71,35 @@ func generateExtraData(jsonBytes []byte) *proto.ExtraData {
 	}
 }
 
+func hypervisorStateForSpec(spec models.MicroVMSpec, stateRoot string) (*HypervisorState, error) {
+	networkSvc := network.New(&network.Config{
+		BridgeName: spec.HostNetDev,
+	})
+	fsSvc := afero.NewOsFs()
+
+	switch spec.Provider {
+	case "firecracker":
+		vmSvc := firecracker.New(&firecracker.Config{
+			FirecrackerBin: "/usr/bin/firecracker",
+			StateRoot:      stateRoot,
+		}, networkSvc, fsSvc)
+
+		return &HypervisorState{
+			networkSvc: networkSvc,
+			fsSvc:      fsSvc,
+			vmSvc:      vmSvc,
+		}, nil
+	case "cloudhypervisor":
+		return &HypervisorState{
+			networkSvc: networkSvc,
+			fsSvc:      fsSvc,
+			vmSvc:      nil,
+		}, nil
+	}
+
+	return nil, fmt.Errorf("unrecognized provider: %s", spec.Provider)
+}
+
 func (s *HyperShim) State(ctx context.Context, req *taskAPI.StateRequest) (*taskAPI.StateResponse, error) {
 	// TODO IO Proxy
 	return s.vmState.agentClient.State(ctx, req)
@@ -81,23 +108,6 @@ func (s *HyperShim) State(ctx context.Context, req *taskAPI.StateRequest) (*task
 func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) (*taskAPI.CreateTaskResponse, error) {
 	if s.vmState != nil {
 		return nil, errors.New("Create called multiple times")
-	}
-
-	networkSvc := network.New(&network.Config{
-		BridgeName: HostIface,
-	})
-	fsSvc := afero.NewOsFs()
-	// TODO pass metadata via containerd and use the appropriate
-	// VM provider
-	vmSvc := firecracker.New(&firecracker.Config{
-		FirecrackerBin: "/usr/bin/firecracker",
-		StateRoot:      s.stateRoot,
-	}, networkSvc, fsSvc)
-
-	hypervisorState := &HypervisorState{
-		networkSvc: networkSvc,
-		fsSvc:      fsSvc,
-		vmSvc:      vmSvc,
 	}
 
 	if len(req.Rootfs) != 1 {
@@ -114,32 +124,34 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 		return nil, fmt.Errorf("failed to create new VMID: %w", err)
 	}
 
-	meta, err := parseOpts(req.Options)
+	spec, err := parseOpts(req.Options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse options: %w", err)
+	}
+
+	spec.ImagePath = rootfs.Source
+	spec.GuestMAC = "06:00:AC:10:00:02"
+
+	// TODO pass metadata via containerd and use the appropriate
+	// VM provider
+	hypervisorState, err := hypervisorStateForSpec(spec, s.stateRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create hypervisor state: %w", err)
 	}
 
 	hypervisorState.vm = &models.MicroVM{
 		ID:      *vmid,
 		Version: 2,
-		Spec: models.MicroVMSpec{
-			Kernel:     KernelImage,
-			RootfsPath: RootfsPath,
-			ImagePath:  rootfs.Source,
-			VCPU:       meta.VCPU,
-			MemoryInMb: meta.Memory,
-			HostNetDev: meta.HostIface,
-			GuestMAC:   "06:00:AC:10:00:02",
-		},
+		Spec:    spec,
 	}
 
-	if err := vmSvc.Start(ctx, hypervisorState.vm); err != nil {
+	if err := hypervisorState.vmSvc.Start(ctx, hypervisorState.vm); err != nil {
 		return nil, fmt.Errorf("failed to start VM: %w", err)
 	}
 
 	s.vmState = hypervisorState
 
-	conn, err := vsock.DialContext(ctx, vmSvc.VSockPath(s.vmState.vm), VSockPort, vsock.WithLogger(log.G(ctx)))
+	conn, err := vsock.DialContext(ctx, hypervisorState.vmSvc.VSockPath(s.vmState.vm), VSockPort, vsock.WithLogger(log.G(ctx)))
 	if err != nil {
 		return nil, err
 	}
@@ -329,6 +341,8 @@ func (s *HyperShim) startEventForwarders() {
 }
 
 func main() {
+	typeurl.Register(&models.MicroVMSpec{})
+
 	shim.Run(
 		ShimID,
 		func(ctx context.Context, id string, remotePublisher shim.Publisher, shimCancel func()) (shim.Shim, error) {

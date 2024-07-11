@@ -6,6 +6,7 @@ toolchain go1.22.4
 
 require (
 	github.com/containerd/ttrpc v1.2.4
+	github.com/containerd/typeurl v1.0.2
 	github.com/containerd/typeurl/v2 v2.1.1
 	github.com/coreos/go-iptables v0.7.0
 	github.com/diskfs/go-diskfs v1.4.0
