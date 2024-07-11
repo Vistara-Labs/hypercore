@@ -3,12 +3,8 @@ package kill
 import (
 	"context"
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"os"
 	cmdflags "vistara-node/internal/command/flags"
 	"vistara-node/internal/config"
-	"vistara-node/pkg/api/services/microvm"
 	"vistara-node/pkg/flags"
 )
 
@@ -31,23 +27,5 @@ func NewCommand(cfg *config.Config) (*cobra.Command, error) {
 }
 
 func run(ctx context.Context, cfg *config.Config) error {
-	conn, err := grpc.NewClient(cfg.GRPCAPIEndpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return err
-	}
-
-	defer conn.Close()
-
-	request := microvm.DeleteMicroVMRequest{
-		Id: os.Args[2],
-	}
-
-	vmServiceClient := microvm.NewVMServiceClient(conn)
-	_, err = vmServiceClient.Delete(ctx, &request)
-
-	if err != nil {
-		return err
-	}
-
-	return nil
+	panic("TODO")
 }

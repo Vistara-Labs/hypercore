@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/leases"
 )
 
-func withOwnerLease(ctx context.Context, owner string, client Client) (context.Context, error) {
+func withOwnerLease(ctx context.Context, owner string, client *containerd.Client) (context.Context, error) {
 	leaseName := getLeaseNameForOwner(owner)
 
 	l, err := getExistingOrCreateLease(ctx, leaseName, client.LeasesService())

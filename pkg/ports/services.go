@@ -3,24 +3,13 @@ package ports
 import (
 	"context"
 	"time"
-	vm1 "vistara-node/pkg/api/services/microvm"
-	"vistara-node/pkg/api/types"
 	"vistara-node/pkg/models"
 )
-
-// https://github.com/weaveworks-liquidmetal/flintlock
-// is a good example of a project that uses the ports pattern.
-
-// MicroVMGRPCService is a port for a microvm grpc service.
-type MicroVMGRPCService interface {
-	vm1.VMServiceServer
-}
 
 // MicroService is the port definition for a microvm service.
 type MicroVMService interface {
 	Start(ctx context.Context, vm *models.MicroVM) error
 	Stop(ctx context.Context, vm *models.MicroVM) error
-	GetRuntimeData(ctx context.Context, vm *models.MicroVM) (*types.MicroVMRuntimeData, error)
 	Pid(ctx context.Context, vm *models.MicroVM) (int, error)
 	State(ctx context.Context, id string) (MicroVMState, error)
 	VSockPath(vm *models.MicroVM) string
