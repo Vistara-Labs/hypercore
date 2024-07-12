@@ -2,9 +2,12 @@ package list
 
 import (
 	"context"
+	"fmt"
+
 	"github.com/spf13/cobra"
 	cmdflags "vistara-node/internal/command/flags"
 	"vistara-node/internal/config"
+	"vistara-node/pkg/containerd"
 	"vistara-node/pkg/flags"
 )
 
@@ -26,5 +29,25 @@ func NewCommand(cfg *config.Config) (*cobra.Command, error) {
 }
 
 func run(ctx context.Context, cfg *config.Config) error {
-	panic("TODO")
+	repo, err := containerd.NewMicroVMRepository(&containerd.Config{
+		SnapshotterKernel:  cfg.CtrSnapshotterKernel,
+		SnapshotterVolume:  "",
+		SocketPath:         cfg.CtrSocketPath,
+		Namespace:          cfg.CtrNamespace,
+		ContainerNamespace: cfg.CtrNamespace + "-container",
+	})
+	if err != nil {
+		return err
+	}
+
+	tasks, err := repo.GetTasks(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, task := range tasks {
+		fmt.Printf("Task %s, Container %s\n", task.ID, task.ContainerID)
+	}
+
+	return nil
 }

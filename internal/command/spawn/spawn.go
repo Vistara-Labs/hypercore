@@ -15,7 +15,6 @@ import (
 	"vistara-node/pkg/containerd"
 	"vistara-node/pkg/flags"
 	"vistara-node/pkg/models"
-	"vistara-node/pkg/ports"
 )
 
 type HacConfig struct {
@@ -85,7 +84,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 	switch cfg.DefaultVMProvider {
 	case "runc":
-		id, err = repo.CreateContainer(ctx, ports.CreateContainerOpts{
+		id, err = repo.CreateContainer(ctx, containerd.CreateContainerOpts{
 			ImageRef:    hacConfig.Hardware.Ref,
 			Snapshotter: "",
 			Runtime: struct {
@@ -99,7 +98,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	case "firecracker":
 		fallthrough
 	case "cloudhypervisor":
-		id, err = repo.CreateContainer(ctx, ports.CreateContainerOpts{
+		id, err = repo.CreateContainer(ctx, containerd.CreateContainerOpts{
 			ImageRef:    hacConfig.Hardware.Ref,
 			Snapshotter: "blockfile",
 			Runtime: struct {
