@@ -93,7 +93,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 			}{
 				Name: "io.containerd.runc.v2",
 			},
-			CioCreator: cio.NewCreator(),
+			CioCreator: cio.NewCreator(cio.WithStdio),
 		})
 	case "firecracker":
 		fallthrough
@@ -115,7 +115,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 					RootfsPath: hacConfig.Hardware.Drive,
 				},
 			},
-			CioCreator: cio.NewCreator(),
+			CioCreator: cio.NewCreator(cio.WithStdio),
 		})
 	case "docker":
 		panic("TODO")
