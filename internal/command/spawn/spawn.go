@@ -1,6 +1,7 @@
 package spawn
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/containerd/containerd/cio"
@@ -115,7 +116,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 					RootfsPath: hacConfig.Hardware.Drive,
 				},
 			},
-			CioCreator: cio.NewCreator(cio.WithStdio),
+			CioCreator: cio.NewCreator(cio.WithStreams(&bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{})),
 		})
 	case "docker":
 		panic("TODO")
