@@ -61,7 +61,26 @@ interface = "ens2" # Host interface to bridge with the VM, eg. eth0
 2. Use the hypercore CLI to spawn the VM (using firecracker as the VM provider):
 
 ```bash
-$ sudo ./hypercore spawn --provider firecracker --hac hac.toml
+$ sudo ./hypercore spawn --provider firecracker
+Creating VM '67a20540-5cd6-4445-adc6-ac609575546a' with config {Spacecore:{name: description:} Hardware:{Cores:4 Memory:4096 Kernel:/home/dev/images/vmlinux-5.10.217 Drive:/home/dev/firecracker-containerd/tools/image-builder/rootfs.img Interface:ens2 Ref:docker.io/library/alpine:latest}}
+ID: 08cf7306-1af6-48f2-b2f4-6d638fc428c0
+```
+
+3. Attach to the VM using the hypercore CLI
+
+```bash
+$ sudo ./hypercore attach 08cf7306-1af6-48f2-b2f4-6d638fc428c0
+whoami
+root
+echo $$
+1
+cat /etc/os-release
+NAME="Alpine Linux"
+ID=alpine
+VERSION_ID=3.20.1
+PRETTY_NAME="Alpine Linux v3.20"
+HOME_URL="https://alpinelinux.org/"
+BUG_REPORT_URL="https://gitlab.alpinelinux.org/alpine/aports/-/issues"
 ```
 
 ### Important Components
