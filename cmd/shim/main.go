@@ -70,12 +70,20 @@ func parseOpts(options *types.Any) (models.MicroVMSpec, error) {
 	return metadata, err
 }
 
-func generateExtraData(baseVSockPort uint32, jsonBytes []byte) *proto.ExtraData {
-	log.G(context.Background()).Infof("Generating extra options with base VSock port %d", baseVSockPort)
+func generateExtraData(baseVSockPort uint32, jsonBytes []byte, options *types.Any) *proto.ExtraData {
+	var opts *types.Any
+	if options != nil {
+		valCopy := make([]byte, len(options.Value))
+		copy(valCopy, options.Value)
+		opts = &types.Any{
+			TypeUrl: options.TypeUrl,
+			Value:   valCopy,
+		}
+	}
 
 	return &proto.ExtraData{
 		JsonSpec:    jsonBytes,
-		RuncOptions: nil,
+		RuncOptions: opts,
 		StdinPort:   baseVSockPort + 1,
 		StdoutPort:  baseVSockPort + 2,
 		StderrPort:  baseVSockPort + 3,
@@ -170,7 +178,7 @@ func (s *HyperShim) State(ctx context.Context, req *taskAPI.StateRequest) (*task
 		return resp, nil
 	}
 
-	extraData := generateExtraData(s.getAndIncrementPortCount(), nil)
+	extraData := generateExtraData(s.getAndIncrementPortCount(), nil, nil)
 	attach := ioproxy.AttachRequest{
 		ID:         req.ID,
 		ExecID:     req.ExecID,
@@ -267,7 +275,7 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 		return nil, fmt.Errorf("failed to read config.json from %s: %w", req.Bundle, err)
 	}
 
-	extraData := generateExtraData(s.getAndIncrementPortCount(), ociConfig)
+	extraData := generateExtraData(s.getAndIncrementPortCount(), ociConfig, nil)
 
 	req.Options, err = protobuf.MarshalAnyToProto(extraData)
 	if err != nil {
@@ -283,6 +291,15 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 
 	if err != nil {
 		return nil, err
+	}
+
+	if err := s.addFIFOs(req.ID, "", cio.Config{
+		Terminal: req.Terminal,
+		Stdin:    req.Stdin,
+		Stdout:   req.Stdout,
+		Stderr:   req.Stderr,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to add FIFOs: %w", err)
 	}
 
 	close(s.vmReady)
@@ -319,7 +336,7 @@ func (s *HyperShim) Kill(ctx context.Context, req *taskAPI.KillRequest) (*emptyp
 }
 
 func (s *HyperShim) Exec(ctx context.Context, req *taskAPI.ExecProcessRequest) (*emptypb.Empty, error) {
-	extraData := generateExtraData(s.getAndIncrementPortCount(), nil)
+	extraData := generateExtraData(s.getAndIncrementPortCount(), nil, req.Spec)
 
 	var err error
 	req.Spec, err = protobuf.MarshalAnyToProto(extraData)
