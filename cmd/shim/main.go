@@ -205,11 +205,6 @@ func (s *HyperShim) State(ctx context.Context, req *taskAPI.StateRequest) (*task
 }
 
 func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) (*taskAPI.CreateTaskResponse, error) {
-	py, _ := json.Marshal(req)
-	fd, _ := os.Create("/tmp/create.json")
-	fd.Write(py)
-	fd.Close()
-
 	if s.vmState != nil {
 		return nil, errors.New("Create called multiple times")
 	}
