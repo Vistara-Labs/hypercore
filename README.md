@@ -18,18 +18,14 @@ Clone the repository:
 git clone https://github.com/vistara-labs/hypercore.git
 ```
 
-Build the containerd shim for spawning and managing the lifecycle of MicroVMs. Make sure that it is present in `$PATH` so it can be picked up by containerd:
+Build the unified hypercore binary for spawning and managing the lifecycle of MicroVMs. Depending on the binary name it either runs the hypercore CLI, or the containerd shim. The shim must be present in `$PATH` so we can symlink it to `/usr/local/bin`:
 
 ```bash
-$ go build -o containerd-shim-hypercore-example ./cmd/shim/main.go
+$ go build -o containerd-shim-hypercore-example cmd/main.go
 # Assuming /usr/local/bin is in $PATH, we can symlink the binary there
 $ sudo ln -s $PWD/containerd-shim-hypercore-example /usr/local/bin/
-```
-
-Build the hypercore CLI to interact with containerd and the shim:
-
-```bash
-$ go build -o hypercore cmd/vistarad/main.go
+# For hypercore CLI
+$ ln -s containerd-shim-hypercore-example hypercore
 ```
 
 ### Containerd Setup
