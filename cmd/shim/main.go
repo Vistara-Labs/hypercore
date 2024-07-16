@@ -29,6 +29,7 @@ import (
 	"github.com/vistara-labs/firecracker-containerd/utils"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
 
+	"vistara-node/pkg/hypervisor/cloudhypervisor"
 	"vistara-node/pkg/hypervisor/firecracker"
 	"vistara-node/pkg/models"
 	"vistara-node/pkg/network"
@@ -109,10 +110,14 @@ func hypervisorStateForSpec(spec models.MicroVMSpec, stateRoot string) (*Hypervi
 			vmSvc:      vmSvc,
 		}, nil
 	case "cloudhypervisor":
+		vmSvc := cloudhypervisor.New(&cloudhypervisor.Config{
+			CloudHypervisorBin: "/usr/bin/cloud-hypervisor",
+			StateRoot:          stateRoot,
+		}, networkSvc, fsSvc)
 		return &HypervisorState{
 			networkSvc: networkSvc,
 			fsSvc:      fsSvc,
-			vmSvc:      nil,
+			vmSvc:      vmSvc,
 		}, nil
 	}
 

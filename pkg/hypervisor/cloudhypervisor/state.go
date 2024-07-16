@@ -26,12 +26,11 @@ type State interface {
 	RuntimeState() (RuntimeState, error)
 	SetRuntimeState(runtimeState RuntimeState) error
 
+    VSockPath() string
+
 	LogPath() string
 	StdoutPath() string
 	StderrPath() string
-	SockPath() string
-
-	CloudInitImage() string
 
 	Delete() error
 }
@@ -64,6 +63,10 @@ func (s *fsState) PID() (int, error) {
 	return shared.PIDReadFromFile(s.PIDPath(), s.fs)
 }
 
+func (s *fsState) VSockPath() string {
+    return fmt.Sprintf("%s/cloudhypervisor.vsock", s.stateRoot)
+}
+
 func (s *fsState) LogPath() string {
 	return fmt.Sprintf("%s/%s", s.stateRoot, "cloudhypervisor.log")
 }
@@ -74,14 +77,6 @@ func (s *fsState) StdoutPath() string {
 
 func (s *fsState) StderrPath() string {
 	return fmt.Sprintf("%s/%s", s.stateRoot, "cloudhypervisor.stderr")
-}
-
-func (s *fsState) SockPath() string {
-	return fmt.Sprintf("%s/%s", s.stateRoot, "cloudhypervisor.sock")
-}
-
-func (s *fsState) CloudInitImage() string {
-	return fmt.Sprintf("%s/%s", s.stateRoot, "cloud-init.img")
 }
 
 func (s *fsState) SetPid(pid int) error {

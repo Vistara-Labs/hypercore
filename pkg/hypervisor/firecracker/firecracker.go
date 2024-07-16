@@ -99,16 +99,10 @@ func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM) erro
 	args = append(args, "--config-file", vmState.ConfigPath())
 	args = append(args, "--metadata", vmState.MetadataPath())
 
-	// cmd := firecracker.VMCommandBuilder{}.
-	// 	WithBin(f.config.FirecrackerBin).
-	// 	WithArgs(args).
-	// 	Build(context.TODO())
-	// cmd := exec.Command(f.config.FirecrackerBin, args...)
-
 	cmd := firecracker.VMCommandBuilder{}.
 		WithBin(f.config.FirecrackerBin).
 		WithArgs(args).
-		Build(context.TODO()) //nolint: contextcheck // Intentional.
+		Build(context.Background())
 
 	proc, err := f.startMicroVM(cmd, vmState, f.config.RunDetached)
 
@@ -198,8 +192,6 @@ func (f *FirecrackerService) Stop(ctx context.Context, vm *models.MicroVM) error
 		return fmt.Errorf("failed to get config: %w", err)
 	}
 
-	// TODO exec the reboot command from the guest via ssh to perform a clean
-	// shutdown, and send SIGTERM, timeout, SIGKILL
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return fmt.Errorf("failed to find process with pid %d: %w", pid, err)
