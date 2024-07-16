@@ -95,7 +95,7 @@ func (c *CloudHypervisorService) Start(ctx context.Context, vm *models.MicroVM) 
 	return nil
 }
 
-func (c *CloudHypervisorService) startMicroVM(vm *models.MicroVM, vmState State, status *models.NetworkInterfaceStatus) (*os.Process, error) {
+func (c *CloudHypervisorService) startMicroVM(vm *models.MicroVM, vmState *State, status *models.NetworkInterfaceStatus) (*os.Process, error) {
 	kernelCmdLine := DefaultKernelCmdLine()
 	kernelCmdLine.Set("ip", fmt.Sprintf("%s::%s:%s::eth0::off", status.TapDetails.VmIp.To4(), status.TapDetails.TapIp.To4(), status.TapDetails.Mask.To4()))
 
@@ -145,7 +145,7 @@ func (c *CloudHypervisorService) startMicroVM(vm *models.MicroVM, vmState State,
 	return cmd.Process, nil
 }
 
-func (c *CloudHypervisorService) ensureState(vmState State) error {
+func (c *CloudHypervisorService) ensureState(vmState *State) error {
 	if err := c.fs.MkdirAll(vmState.Root(), defaults.DataDirPerm); err != nil {
 		return fmt.Errorf("creating state directory %s: %w", vmState.Root(), err)
 	}

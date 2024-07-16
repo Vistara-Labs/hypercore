@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"vistara-node/pkg/api/types"
 	"vistara-node/pkg/hypervisor/shared"
 	"vistara-node/pkg/models"
 	"vistara-node/pkg/ports"
@@ -74,10 +73,6 @@ func (d *DockerService) Start(ctx context.Context, vm *models.MicroVM) error {
 	d.idToContainer[vm.ID.String()] = containerResp.ID
 
 	return nil
-}
-
-func (d *DockerService) GetRuntimeData(ctx context.Context, vm *models.MicroVM) (*types.MicroVMRuntimeData, error) {
-	return nil, nil
 }
 
 func (d *DockerService) Stop(ctx context.Context, vm *models.MicroVM) error {

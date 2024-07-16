@@ -3,7 +3,6 @@ package containerd
 import (
 	"fmt"
 	"vistara-node/pkg/defaults"
-	"vistara-node/pkg/models"
 )
 
 const (
@@ -16,14 +15,6 @@ const (
 	versionLabelFormat   = "%s/version"
 	uidLabelFormat       = "%s/uid"
 )
-
-func contentRefName(microvm *models.MicroVM) string {
-	return fmt.Sprintf("%s/microvm/%s", defaults.Domain, microvm.ID.String())
-}
-
-func labelFilter(name, value string) string {
-	return fmt.Sprintf("labels.\"%s\"==\"%s\"", name, value)
-}
 
 // NameLabel is the name of the containerd content store label used for the microvm name.
 func NameLabel() string {

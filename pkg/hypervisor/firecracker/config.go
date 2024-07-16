@@ -136,7 +136,7 @@ func DefaultKernelCmdLine() shared.KernelCmdLine {
 	}
 }
 
-func WithState(vmState State) ConfigOption {
+func WithState(vmState *State) ConfigOption {
 	return func(cfg *VmmConfig) error {
 		cfg.Logger = &LoggerConfig{
 			LogPath:       vmState.LogPath(),

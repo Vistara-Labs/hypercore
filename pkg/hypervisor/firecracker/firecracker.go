@@ -116,7 +116,7 @@ func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM) erro
 	return nil
 }
 
-func (f *FirecrackerService) startMicroVM(cmd *exec.Cmd, vmState State, detached bool) (*os.Process, error) {
+func (f *FirecrackerService) startMicroVM(cmd *exec.Cmd, vmState *State, detached bool) (*os.Process, error) {
 	stdOutFile, err := f.fs.OpenFile(vmState.StdoutPath(), os.O_WRONLY|os.O_CREATE|os.O_APPEND, defaults.DataFilePerm)
 	if err != nil {
 		return nil, fmt.Errorf("opening stdout file %s: %w", vmState.StdoutPath(), err)
@@ -141,7 +141,7 @@ func (f *FirecrackerService) startMicroVM(cmd *exec.Cmd, vmState State, detached
 	return cmd.Process, nil
 }
 
-func (f *FirecrackerService) ensureState(vmState State) error {
+func (f *FirecrackerService) ensureState(vmState *State) error {
 	exists, err := afero.DirExists(f.fs, vmState.Root())
 	if err != nil {
 		return fmt.Errorf("checking if state dir %s exists: %w", vmState.Root(), err)
