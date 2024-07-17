@@ -13,6 +13,7 @@ import (
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
 	"github.com/google/uuid"
+	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
 type RunningContainer struct {
@@ -118,7 +119,13 @@ func (r *containerdRepo) CreateContainer(ctx context.Context, opts CreateContain
 		containerd.WithNewSnapshot(uuid.NewString(), image),
 		containerd.WithRuntime(opts.Runtime.Name, opts.Runtime.Options),
 		containerd.WithContainerLabels(opts.Labels),
-		containerd.WithNewSpec(oci.WithImageConfig(image)),
+		// TODO use bridge driver from CNI plugins
+		containerd.WithNewSpec(
+			oci.WithImageConfig(image),
+			oci.WithHostNamespace(specs.NetworkNamespace),
+			oci.WithHostHostsFile,
+			oci.WithHostResolvconf,
+		),
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to create new container %s: %w", containerId, err)
