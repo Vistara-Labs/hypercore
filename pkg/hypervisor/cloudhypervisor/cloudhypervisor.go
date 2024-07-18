@@ -5,9 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/hashicorp/go-multierror"
 	"os"
 	"os/exec"
-	"time"
 	"vistara-node/pkg/defaults"
 	"vistara-node/pkg/hypervisor/shared"
 	"vistara-node/pkg/log"
@@ -29,10 +29,6 @@ type Config struct {
 	CloudHypervisorBin string
 	// StateRoot is the folder to store any required cloud hypervisor state (i.e. socks, pid, log files).
 	StateRoot string
-	// RunDetached indicates that the cloud hypervisor processes should be run detached (a.k.a daemon) from the parent process.
-	RunDetached bool
-	// DeleteVMTimeout is the timeout to wait for the microvm to be deleted.
-	DeleteVMTimeout time.Duration
 }
 
 type CloudHypervisorService struct {
@@ -50,7 +46,7 @@ func New(cfg *Config, networkSvc ports.NetworkService, fs afero.Fs) ports.MicroV
 	}
 }
 
-func (c *CloudHypervisorService) Start(ctx context.Context, vm *models.MicroVM) error {
+func (c *CloudHypervisorService) Start(ctx context.Context, vm *models.MicroVM, completionFn func(error)) (retErr error) {
 	logger := log.GetLogger(ctx).WithFields(logrus.Fields{
 		"service": "cloudhypervisor_microvm",
 		"vmid":    vm.ID.String(),
@@ -78,7 +74,17 @@ func (c *CloudHypervisorService) Start(ctx context.Context, vm *models.MicroVM) 
 		return fmt.Errorf("creating network interface %w", err)
 	}
 
-	proc, err := c.startMicroVM(vm, vmState, status)
+	defer func() {
+		if retErr != nil {
+			if err := c.networkSvc.IfaceDelete(ctx, ports.DeleteIfaceInput{
+				DeviceName: status.HostDeviceName,
+			}); err != nil {
+				retErr = multierror.Append(retErr, err)
+			}
+		}
+	}()
+
+	proc, err := c.startMicroVM(vm, vmState, status, completionFn)
 
 	if err != nil {
 		return fmt.Errorf("starting cloudhypervisor process %w", err)
@@ -95,7 +101,7 @@ func (c *CloudHypervisorService) Start(ctx context.Context, vm *models.MicroVM) 
 	return nil
 }
 
-func (c *CloudHypervisorService) startMicroVM(vm *models.MicroVM, vmState *State, status *models.NetworkInterfaceStatus) (*os.Process, error) {
+func (c *CloudHypervisorService) startMicroVM(vm *models.MicroVM, vmState *State, status *models.NetworkInterfaceStatus, completionFn func(error)) (*os.Process, error) {
 	kernelCmdLine := DefaultKernelCmdLine()
 	kernelCmdLine.Set("ip", fmt.Sprintf("%s::%s:%s::eth0::off", status.TapDetails.VmIp.To4(), status.TapDetails.TapIp.To4(), status.TapDetails.Mask.To4()))
 
@@ -140,7 +146,7 @@ func (c *CloudHypervisorService) startMicroVM(vm *models.MicroVM, vmState *State
 	}
 
 	// Reap the process
-	go func() { cmd.Wait() }()
+	go func() { completionFn(cmd.Wait()) }()
 
 	return cmd.Process, nil
 }
@@ -173,26 +179,22 @@ func (c *CloudHypervisorService) Stop(ctx context.Context, vm *models.MicroVM) e
 		return fmt.Errorf("failed to find process with pid %d: %w", pid, err)
 	}
 
-	if err = proc.Kill(); err != nil {
-		return fmt.Errorf("failed to kill process %d: %w", pid, err)
-	}
+	retErr := proc.Kill()
 
 	state, err := vmState.RuntimeState()
 	if err != nil {
-		return fmt.Errorf("failed to get runtime state: %w", err)
-	}
-
-	if err = c.networkSvc.IfaceDelete(context.Background(), ports.DeleteIfaceInput{
+		retErr = multierror.Append(retErr, err)
+	} else if err = c.networkSvc.IfaceDelete(context.Background(), ports.DeleteIfaceInput{
 		DeviceName: state.HostIface,
 	}); err != nil {
-		return fmt.Errorf("failed to delete network interface %s: %w", state.HostIface, err)
+		retErr = multierror.Append(retErr, err)
 	}
 
-	if err = vmState.Delete(); err != nil {
-		return fmt.Errorf("failed to delete vmState dir: %w", err)
+	if err := vmState.Delete(); err != nil {
+		retErr = multierror.Append(retErr, err)
 	}
 
-	return nil
+	return retErr
 }
 
 func (c *CloudHypervisorService) Pid(ctx context.Context, vm *models.MicroVM) (int, error) {

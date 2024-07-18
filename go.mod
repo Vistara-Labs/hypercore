@@ -11,6 +11,7 @@ require (
 	github.com/docker/docker v27.0.0+incompatible
 	github.com/firecracker-microvm/firecracker-go-sdk v1.0.0
 	github.com/google/uuid v1.6.0
+	github.com/hashicorp/go-multierror v1.1.1
 	github.com/lorenzosaino/go-sysctl v0.3.1
 	github.com/opencontainers/runtime-spec v1.2.0
 	github.com/spf13/viper v1.19.0
@@ -60,7 +61,6 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
-	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/klauspost/compress v1.17.8 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect

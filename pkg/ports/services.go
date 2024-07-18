@@ -7,7 +7,7 @@ import (
 
 // MicroService is the port definition for a microvm service.
 type MicroVMService interface {
-	Start(ctx context.Context, vm *models.MicroVM) error
+	Start(ctx context.Context, vm *models.MicroVM, completionFn func(error)) error
 	Stop(ctx context.Context, vm *models.MicroVM) error
 	Pid(ctx context.Context, vm *models.MicroVM) (int, error)
 	State(ctx context.Context, id string) (MicroVMState, error)
