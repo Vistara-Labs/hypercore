@@ -5,6 +5,7 @@ import (
 	"vistara-node/internal/command/attach"
 	"vistara-node/internal/command/list"
 	"vistara-node/internal/command/spawn"
+	"vistara-node/internal/command/stop"
 	"vistara-node/internal/config"
 
 	"vistara-node/internal/version"
@@ -74,9 +75,15 @@ func addRootSubCommands(cmd *cobra.Command, cfg *config.Config) error {
 		return fmt.Errorf("creating list command: %w", err)
 	}
 
+	stopCmd, err := stop.NewCommand(cfg)
+	if err != nil {
+		return fmt.Errorf("creating stop command; %w", err)
+	}
+
 	cmd.AddCommand(spawnCmd)
 	cmd.AddCommand(attachCmd)
 	cmd.AddCommand(listCmd)
+	cmd.AddCommand(stopCmd)
 	cmd.AddCommand(versionCommand())
 
 	return nil
