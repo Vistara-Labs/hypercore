@@ -23,7 +23,6 @@ import (
 	"github.com/firecracker-microvm/firecracker-go-sdk/vsock"
 	"github.com/google/uuid"
 	"github.com/spf13/afero"
-	"github.com/vistara-labs/firecracker-containerd/eventbridge"
 	"github.com/vistara-labs/firecracker-containerd/proto"
 	ioproxy "github.com/vistara-labs/firecracker-containerd/proto/service/ioproxy/ttrpc"
 	"github.com/vistara-labs/firecracker-containerd/utils"
@@ -40,14 +39,13 @@ const ShimID = "hypercore.example"
 const VSockPort = 10789
 
 type HypervisorState struct {
-	networkSvc        ports.NetworkService
-	fsSvc             afero.Fs
-	vmSvc             ports.MicroVMService
-	vm                *models.MicroVM
-	eventBridgeClient eventbridge.Getter
-	agentClient       taskAPI.TaskService
-	ioProxyClient     ioproxy.IOProxyService
-	vmStopped         chan struct{}
+	networkSvc    ports.NetworkService
+	fsSvc         afero.Fs
+	vmSvc         ports.MicroVMService
+	vm            *models.MicroVM
+	agentClient   taskAPI.TaskService
+	ioProxyClient ioproxy.IOProxyService
+	vmStopped     chan struct{}
 }
 
 type HyperShim struct {
@@ -57,13 +55,12 @@ type HyperShim struct {
 	remotePublisher shim.Publisher
 	eventExchange   *exchange.Exchange
 	taskManager     utils.TaskManager
-	// vmReady         chan struct{}
-	vmState        *HypervisorState
-	fifos          map[string]map[string]cio.Config
-	fifosMutex     sync.Mutex
-	portCountMutex sync.Mutex
-	portCount      uint32
-	shimCancel     func()
+	vmState         *HypervisorState
+	fifos           map[string]map[string]cio.Config
+	fifosMutex      sync.Mutex
+	portCountMutex  sync.Mutex
+	portCount       uint32
+	shimCancel      func()
 }
 
 func parseOpts(options *types.Any) (models.MicroVMSpec, error) {
@@ -275,7 +272,6 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 
 	s.vmState.agentClient = taskAPI.NewTaskClient(rpcClient)
 	s.vmState.ioProxyClient = ioproxy.NewIOProxyClient(rpcClient)
-	s.vmState.eventBridgeClient = eventbridge.NewGetterClient(rpcClient)
 
 	// The image will be exposed as an unmounted block device
 	// in the guest, /dev/vdb (/dev/vda is the rootfs)
@@ -481,30 +477,6 @@ func (s *HyperShim) StartShim(ctx context.Context, opts shim.StartOpts) (string,
 	return sockAddr, nil
 }
 
-/*
-func (s *HyperShim) startEventForwarders() {
-	republishCh := eventbridge.Republish(s.shimCtx, s.eventExchange, s.remotePublisher)
-
-	go func() {
-		defer s.remotePublisher.Close()
-
-		<-s.vmReady
-
-		attachCh := eventbridge.Attach(s.shimCtx, s.vmState.eventBridgeClient, s.eventExchange)
-
-		err := <-attachCh
-		if err != nil {
-			panic(err)
-		}
-
-		err = <-republishCh
-		if err != nil {
-			panic(err)
-		}
-	}()
-}
-*/
-
 func Run() {
 	typeurl.Register(&models.MicroVMSpec{})
 
@@ -518,12 +490,9 @@ func Run() {
 				remotePublisher: remotePublisher,
 				eventExchange:   exchange.NewExchange(),
 				taskManager:     utils.NewTaskManager(ctx, log.G(ctx)),
-				// vmReady:         make(chan struct{}),
-				fifos:      make(map[string]map[string]cio.Config),
-				shimCancel: shimCancel,
+				fifos:           make(map[string]map[string]cio.Config),
+				shimCancel:      shimCancel,
 			}
-
-			// hyperShim.startEventForwarders()
 
 			return hyperShim, nil
 		},
