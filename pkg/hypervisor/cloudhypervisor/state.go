@@ -16,83 +16,59 @@ type RuntimeState struct {
 	HostIface string `json:"hostIface"`
 }
 
-type State interface {
-	Root() string
-
-	PID() (int, error)
-	PIDPath() string
-	SetPid(pid int) error
-
-	RuntimeState() (RuntimeState, error)
-	SetRuntimeState(runtimeState RuntimeState) error
-
-	LogPath() string
-	StdoutPath() string
-	StderrPath() string
-	SockPath() string
-
-	CloudInitImage() string
-
-	Delete() error
-}
-
-func NewState(vmid models.VMID, stateDir string, fs afero.Fs) State {
-	return &fsState{
+func NewState(vmid models.VMID, stateDir string, fs afero.Fs) *State {
+	return &State{
 		stateRoot: fmt.Sprintf("%s/%s", stateDir, vmid.String()),
 		fs:        fs,
 	}
 }
 
-type fsState struct {
+type State struct {
 	stateRoot string
 	fs        afero.Fs
 }
 
-func (s *fsState) Delete() error {
+func (s *State) Delete() error {
 	return os.RemoveAll(s.stateRoot)
 }
 
-func (s *fsState) Root() string {
+func (s *State) Root() string {
 	return s.stateRoot
 }
 
-func (s *fsState) PIDPath() string {
+func (s *State) PIDPath() string {
 	return fmt.Sprintf("%s/%s", s.stateRoot, "cloudhypervisor.pid")
 }
 
-func (s *fsState) PID() (int, error) {
+func (s *State) PID() (int, error) {
 	return shared.PIDReadFromFile(s.PIDPath(), s.fs)
 }
 
-func (s *fsState) LogPath() string {
+func (s *State) VSockPath() string {
+	return fmt.Sprintf("%s/cloudhypervisor.vsock", s.stateRoot)
+}
+
+func (s *State) LogPath() string {
 	return fmt.Sprintf("%s/%s", s.stateRoot, "cloudhypervisor.log")
 }
 
-func (s *fsState) StdoutPath() string {
+func (s *State) StdoutPath() string {
 	return fmt.Sprintf("%s/%s", s.stateRoot, "cloudhypervisor.stdout")
 }
 
-func (s *fsState) StderrPath() string {
+func (s *State) StderrPath() string {
 	return fmt.Sprintf("%s/%s", s.stateRoot, "cloudhypervisor.stderr")
 }
 
-func (s *fsState) SockPath() string {
-	return fmt.Sprintf("%s/%s", s.stateRoot, "cloudhypervisor.sock")
-}
-
-func (s *fsState) CloudInitImage() string {
-	return fmt.Sprintf("%s/%s", s.stateRoot, "cloud-init.img")
-}
-
-func (s *fsState) SetPid(pid int) error {
+func (s *State) SetPid(pid int) error {
 	return shared.PIDWriteToFile(pid, s.PIDPath(), s.fs)
 }
 
-func (s *fsState) runtimeStatePath() string {
+func (s *State) runtimeStatePath() string {
 	return fmt.Sprintf("%s/%s", s.stateRoot, "runtime-state.json")
 }
 
-func (s *fsState) RuntimeState() (RuntimeState, error) {
+func (s *State) RuntimeState() (RuntimeState, error) {
 	runtimeState := RuntimeState{}
 
 	file, err := s.fs.OpenFile(s.runtimeStatePath(), os.O_RDONLY, defaults.DataFilePerm)
@@ -114,7 +90,7 @@ func (s *fsState) RuntimeState() (RuntimeState, error) {
 	return runtimeState, nil
 }
 
-func (s *fsState) SetRuntimeState(runtimeState RuntimeState) error {
+func (s *State) SetRuntimeState(runtimeState RuntimeState) error {
 	stateBytes, err := json.Marshal(&runtimeState)
 	if err != nil {
 		return fmt.Errorf("failed to marshal state: %w", err)

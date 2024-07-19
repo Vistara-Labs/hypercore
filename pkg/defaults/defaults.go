@@ -12,7 +12,7 @@ const (
 	ContainerdNamespace = "vistara"
 
 	// ContainerdSocket is the defaults path for the containerd socket.
-	ContainerdSocket = "/tmp/containerd-dev/containerd.sock"
+	ContainerdSocket = "/var/lib/hypercore/containerd.sock"
 
 	// ContainerdVolumeSnapshotter is the name of the snapshotter used for volumes.
 	ContainerdVolumeSnapshotter = "devmapper"

@@ -35,19 +35,19 @@ func (e IncorrectVMIDFormatError) Error() string {
 }
 
 type specNotFoundError struct {
-       name      string
-       namespace string
-       version   string
-       uid       string
+	name      string
+	namespace string
+	version   string
+	uid       string
 }
 
 // Error returns the error message.
 func (e specNotFoundError) Error() string {
-       if e.version == "" {
-               return fmt.Sprintf("microvm spec %s/%s/%s not found", e.namespace, e.name, e.uid)
-       }
+	if e.version == "" {
+		return fmt.Sprintf("microvm spec %s/%s/%s not found", e.namespace, e.name, e.uid)
+	}
 
-       return fmt.Sprintf("microvm spec %s/%s/%s not found with version %s", e.namespace, e.name, e.uid, e.version)
+	return fmt.Sprintf("microvm spec %s/%s/%s not found with version %s", e.namespace, e.name, e.uid, e.version)
 }
 
 func NewSpecNotFound(name, namespace, version, uid string) error {

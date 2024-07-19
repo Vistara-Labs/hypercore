@@ -25,7 +25,7 @@ func CreateConfig(opts ...ConfigOption) (*VmmConfig, error) {
 	return cfg, nil
 }
 
-func WithMicroVM(vm *models.MicroVM, status *models.NetworkInterfaceStatus) ConfigOption {
+func WithMicroVM(vm *models.MicroVM, status *models.NetworkInterfaceStatus, vsockPath string) ConfigOption {
 	return func(cfg *VmmConfig) error {
 		if vm == nil {
 			return errors.ErrSpecRequired
@@ -50,18 +50,27 @@ func WithMicroVM(vm *models.MicroVM, status *models.NetworkInterfaceStatus) Conf
 			NetworkInterfaces: []string{cfg.NetDevices[0].IfaceID},
 		}
 
-		cfg.BlockDevices = []BlockDeviceConfig{}
-
-		blockDeviceCfg := BlockDeviceConfig{
-			ID:           vm.Spec.RootfsPath,
-			IsReadOnly:   false,
-			IsRootDevice: true,
-			PathOnHost:   vm.Spec.RootfsPath,
-			CacheType:    CacheTypeUnsafe,
+		cfg.BlockDevices = []BlockDeviceConfig{
+			{
+				ID:           "rootfs",
+				IsReadOnly:   true,
+				IsRootDevice: true,
+				PathOnHost:   vm.Spec.RootfsPath,
+				CacheType:    CacheTypeUnsafe,
+			},
+			{
+				ID:           "image",
+				IsReadOnly:   false,
+				IsRootDevice: false,
+				PathOnHost:   vm.Spec.ImagePath,
+				CacheType:    CacheTypeUnsafe,
+			},
 		}
-		cfg.BlockDevices = append(cfg.BlockDevices, blockDeviceCfg)
 
-		kernelCmdLine := DefaultKernelCmdLine()
+		cfg.VsockDevice = &VsockDeviceConfig{
+			GuestCID: 0,
+			UDSPath:  vsockPath,
+		}
 
 		tapIdx, err := strconv.Atoi(strings.ReplaceAll(status.HostDeviceName, "hypercore-", ""))
 		if err != nil {
@@ -69,11 +78,9 @@ func WithMicroVM(vm *models.MicroVM, status *models.NetworkInterfaceStatus) Conf
 		}
 
 		tapDetails := network.GetTapDetails(tapIdx)
+
+		kernelCmdLine := DefaultKernelCmdLine()
 		kernelCmdLine.Set("ip", fmt.Sprintf("%s::%s:%s::eth0::off", tapDetails.VmIp.To4(), tapDetails.TapIp.To4(), tapDetails.Mask.To4()))
-
-		// fmt.Printf("vm.Spec.Kernel.AddNetworkConfig: %v\n", vm.Spec.Kernel.AddNetworkConfig)
-		// fmt.Printf("kernelCmdLine: %v\n", kernelCmdLine)
-
 		kernelArgs := kernelCmdLine.String()
 
 		bootSourceConfig := BootSourceConfig{
@@ -115,18 +122,21 @@ func WithMicroVM(vm *models.MicroVM, status *models.NetworkInterfaceStatus) Conf
 // https://www.kernel.org/doc/html/v5.15/admin-guide/kernel-parameters.html
 func DefaultKernelCmdLine() shared.KernelCmdLine {
 	return shared.KernelCmdLine{
-		"console":       "ttyS0",
-		"reboot":        "k",
-		"panic":         "1",
-		"pci":           "off",
-		"i8042.noaux":   "",
-		"i8042.nomux":   "",
-		"i8042.nopnp":   "",
-		"i8042.dumbkbd": "",
+		"console":                             "ttyS0",
+		"reboot":                              "k",
+		"panic":                               "1",
+		"pci":                                 "off",
+		"i8042.noaux":                         "",
+		"i8042.nomux":                         "",
+		"i8042.nopnp":                         "",
+		"i8042.dumbkbd":                       "",
+		"systemd.journald.forward_to_console": "",
+		"systemd.unit":                        "firecracker.target",
+		"init":                                "/sbin/overlay-init",
 	}
 }
 
-func WithState(vmState State) ConfigOption {
+func WithState(vmState *State) ConfigOption {
 	return func(cfg *VmmConfig) error {
 		cfg.Logger = &LoggerConfig{
 			LogPath:       vmState.LogPath(),

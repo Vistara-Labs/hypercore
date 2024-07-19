@@ -5,10 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/hashicorp/go-multierror"
 	"os"
 	"os/exec"
-	"time"
-	"vistara-node/pkg/api/types"
 	"vistara-node/pkg/defaults"
 	"vistara-node/pkg/hypervisor/shared"
 	"vistara-node/pkg/log"
@@ -31,10 +30,6 @@ type Config struct {
 	FirecrackerBin string
 	// StateRoot is the folder to store any required firecracker state (i.e. socks, pid, log files).
 	StateRoot string
-	// RunDetached indicates that the firecracker processes should be run detached (a.k.a daemon) from the parent process.
-	RunDetached bool
-	// DeleteVMTimeout is the timeout to wait for the microvm to be deleted.
-	DeleteVMTimeout time.Duration
 }
 
 type FirecrackerService struct {
@@ -53,14 +48,14 @@ func New(cfg *Config, networkSvc ports.NetworkService, fs afero.Fs) ports.MicroV
 	}
 }
 
-func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM) error {
+func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM, completionFn func(error)) (retErr error) {
 	logger := log.GetLogger(ctx).WithFields(logrus.Fields{
 		"service": "firecracker_microvm",
 		"vmid":    vm.ID.String(),
 	})
 	logger.Debugf("creating microvm inside firecracker start")
 
-	if vm.Spec.Kernel == "" || vm.Spec.RootfsPath == "" || vm.Spec.HostNetDev == "" || vm.Spec.GuestMAC == "" {
+	if vm.Spec.Kernel == "" || vm.Spec.RootfsPath == "" || vm.Spec.HostNetDev == "" || vm.Spec.GuestMAC == "" || vm.Spec.ImagePath == "" {
 		return errors.New("missing fields from model")
 	}
 
@@ -82,7 +77,17 @@ func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM) erro
 		return fmt.Errorf("creating network interface %w", err)
 	}
 
-	config, err := CreateConfig(WithMicroVM(vm, status), WithState(vmState))
+	defer func() {
+		if retErr != nil {
+			if err := f.networkSvc.IfaceDelete(ctx, ports.DeleteIfaceInput{
+				DeviceName: status.HostDeviceName,
+			}); err != nil {
+				retErr = multierror.Append(retErr, err)
+			}
+		}
+	}()
+
+	config, err := CreateConfig(WithMicroVM(vm, status, f.VSockPath(vm)), WithState(vmState))
 	if err != nil {
 		return fmt.Errorf("creating firecracker config: %w", err)
 	}
@@ -100,18 +105,12 @@ func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM) erro
 	args = append(args, "--config-file", vmState.ConfigPath())
 	args = append(args, "--metadata", vmState.MetadataPath())
 
-	// cmd := firecracker.VMCommandBuilder{}.
-	// 	WithBin(f.config.FirecrackerBin).
-	// 	WithArgs(args).
-	// 	Build(context.TODO())
-	// cmd := exec.Command(f.config.FirecrackerBin, args...)
-
 	cmd := firecracker.VMCommandBuilder{}.
 		WithBin(f.config.FirecrackerBin).
 		WithArgs(args).
-		Build(context.TODO()) //nolint: contextcheck // Intentional.
+		Build(context.Background())
 
-	proc, err := f.startMicroVM(cmd, vmState, f.config.RunDetached)
+	proc, err := f.startMicroVM(cmd, vmState, completionFn)
 
 	if err != nil {
 		return fmt.Errorf("starting firecracker process %w", err)
@@ -120,10 +119,11 @@ func (f *FirecrackerService) Start(ctx context.Context, vm *models.MicroVM) erro
 	if err = vmState.SetPid(proc.Pid); err != nil {
 		return fmt.Errorf("saving pid %d to file: %w", proc.Pid, err)
 	}
+
 	return nil
 }
 
-func (f *FirecrackerService) startMicroVM(cmd *exec.Cmd, vmState State, detached bool) (*os.Process, error) {
+func (f *FirecrackerService) startMicroVM(cmd *exec.Cmd, vmState *State, completionFn func(error)) (*os.Process, error) {
 	stdOutFile, err := f.fs.OpenFile(vmState.StdoutPath(), os.O_WRONLY|os.O_CREATE|os.O_APPEND, defaults.DataFilePerm)
 	if err != nil {
 		return nil, fmt.Errorf("opening stdout file %s: %w", vmState.StdoutPath(), err)
@@ -143,12 +143,12 @@ func (f *FirecrackerService) startMicroVM(cmd *exec.Cmd, vmState State, detached
 	}
 
 	// Reap the process
-	go func() { cmd.Wait() }()
+	go func() { completionFn(cmd.Wait()) }()
 
 	return cmd.Process, nil
 }
 
-func (f *FirecrackerService) ensureState(vmState State) error {
+func (f *FirecrackerService) ensureState(vmState *State) error {
 	exists, err := afero.DirExists(f.fs, vmState.Root())
 	if err != nil {
 		return fmt.Errorf("checking if state dir %s exists: %w", vmState.Root(), err)
@@ -177,17 +177,13 @@ func (f *FirecrackerService) ensureState(vmState State) error {
 	return nil
 }
 
-func (f *FirecrackerService) GetRuntimeData(ctx context.Context, vm *models.MicroVM) (*types.MicroVMRuntimeData, error) {
+func (f *FirecrackerService) Pid(ctx context.Context, vm *models.MicroVM) (int, error) {
 	vmState := NewState(vm.ID, f.config.StateRoot, f.fs)
+	return vmState.PID()
+}
 
-	config, err := vmState.Config()
-	if err != nil {
-		return nil, err
-	}
-
-	return &types.MicroVMRuntimeData{
-		NetworkInterface: config.NetDevices[0].HostDevName,
-	}, nil
+func (f *FirecrackerService) VSockPath(vm *models.MicroVM) string {
+	return NewState(vm.ID, f.config.StateRoot, f.fs).VSockPath()
 }
 
 func (f *FirecrackerService) Stop(ctx context.Context, vm *models.MicroVM) error {
@@ -203,29 +199,25 @@ func (f *FirecrackerService) Stop(ctx context.Context, vm *models.MicroVM) error
 		return fmt.Errorf("failed to get config: %w", err)
 	}
 
-	// TODO exec the reboot command from the guest via ssh to perform a clean
-	// shutdown, and send SIGTERM, timeout, SIGKILL
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return fmt.Errorf("failed to find process with pid %d: %w", pid, err)
 	}
 
-	if err = proc.Kill(); err != nil {
-		return fmt.Errorf("failed to kill process %d: %w", pid, err)
-	}
+	retErr := proc.Kill()
 
 	iface := config.NetDevices[0].HostDevName
 	if err = f.networkSvc.IfaceDelete(context.Background(), ports.DeleteIfaceInput{
 		DeviceName: iface,
 	}); err != nil {
-		return fmt.Errorf("failed to delete network interface %s: %w", iface, err)
+		retErr = multierror.Append(retErr, err)
 	}
 
 	if err = vmState.Delete(); err != nil {
-		return fmt.Errorf("failed to delete vmState dir: %w", err)
+		retErr = multierror.Append(retErr, err)
 	}
 
-	return nil
+	return retErr
 }
 
 func (f *FirecrackerService) State(ctx context.Context, id string) (ports.MicroVMState, error) {

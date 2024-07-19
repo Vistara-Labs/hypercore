@@ -2,26 +2,16 @@ package ports
 
 import (
 	"context"
-	"time"
-	vm1 "vistara-node/pkg/api/services/microvm"
-	"vistara-node/pkg/api/types"
 	"vistara-node/pkg/models"
 )
 
-// https://github.com/weaveworks-liquidmetal/flintlock
-// is a good example of a project that uses the ports pattern.
-
-// MicroVMGRPCService is a port for a microvm grpc service.
-type MicroVMGRPCService interface {
-	vm1.VMServiceServer
-}
-
 // MicroService is the port definition for a microvm service.
 type MicroVMService interface {
-	Start(ctx context.Context, vm *models.MicroVM) error
+	Start(ctx context.Context, vm *models.MicroVM, completionFn func(error)) error
 	Stop(ctx context.Context, vm *models.MicroVM) error
-	GetRuntimeData(ctx context.Context, vm *models.MicroVM) (*types.MicroVMRuntimeData, error)
+	Pid(ctx context.Context, vm *models.MicroVM) (int, error)
 	State(ctx context.Context, id string) (MicroVMState, error)
+	VSockPath(vm *models.MicroVM) string
 	Metrics(ctx context.Context, id models.VMID) (MachineMetrics, error)
 }
 
@@ -40,58 +30,6 @@ const (
 	MicroVMStateConfigured MicroVMState = "configured"
 	MicroVMStateRunning    MicroVMState = "running"
 )
-
-// IDService is a port for a service for working with identifiers.
-type IDService interface {
-	// GenerateRandom will create a random identifier.
-	GenerateRandom() (string, error)
-}
-
-// EventService is a port for a service that acts as a event bus.
-type EventService interface {
-	// Publish will publish an event to a specific topic.
-	Publish(ctx context.Context, topic string, eventToPublish interface{}) error
-	// SubscribeTopic will subscribe to events on a named topic..
-	SubscribeTopic(ctx context.Context, topic string) (ch <-chan *EventEnvelope, errs <-chan error)
-	// SubscribeTopics will subscribe to events on a set of named topics.
-	SubscribeTopics(ctx context.Context, topics []string) (ch <-chan *EventEnvelope, errs <-chan error)
-	// Subscribe will subscribe to events on all topics
-	Subscribe(ctx context.Context) (ch <-chan *EventEnvelope, errs <-chan error)
-}
-
-type EventEnvelope struct {
-	Timestamp time.Time
-	Namespace string
-	Topic     string
-	Event     interface{}
-}
-
-// ImageService is a port for a service that interacts with OCI images.
-type ImageService interface {
-	// Pull will get (i.e. pull) the image for a specific owner.
-	Pull(ctx context.Context, input *ImageSpec) error
-	// Exists checks if the image already exists on the machine.
-	Exists(ctx context.Context, input *ImageSpec) (bool, error)
-	// IsMounted checks if the image is pulled and mounted.
-	IsMounted(ctx context.Context, input *ImageMountSpec) (bool, error)
-}
-
-type ImageSpec struct {
-	// ImageName is the name of the image to get.
-	ImageName string
-	// Owner is the name of the owner of the image.
-	Owner string
-}
-
-// ImageMountSpec is the declaration of an image that needs to be pulled and mounted.
-type ImageMountSpec struct {
-	// ImageName is the name of the image to get.
-	ImageName string
-	// Owner is the name of the owner of the image.
-	Owner string
-	// OwnerUsageID is an identifier from the owner.
-	OwnerUsageID string
-}
 
 // NetworkService is a port for a service that interacts with the network
 // stack on the host machine.
@@ -136,46 +74,4 @@ type IfaceDetails struct {
 type DeleteIfaceInput struct {
 	// DeviceName is the name of the network interface to delete from the host.
 	DeviceName string
-}
-
-// DiskService is a port for a service that creates disk images.
-type DiskService interface {
-	// Create will create a new disk.
-	Create(ctx context.Context, input DiskCreateInput) error
-}
-
-// DiskType represents the type of disk.
-type DiskType int
-
-const (
-	// DiskTypeFat32 is a FAT32 compatible filesystem.
-	DiskTypeFat32 DiskType = iota
-	// DiskTypeISO9660 is an iso filesystem.
-	DiskTypeISO9660
-)
-
-// DiskCreateInput are the input options for creating a disk.
-type DiskCreateInput struct {
-	//Path is the filesystem path of where to create the disk.
-	Path string
-	// Size is how big the disk should be. It uses human readable formats
-	// such as 8Mb, 10Kb.
-	Size string
-	// VolumeName is the name to give to the volume.
-	VolumeName string
-	// Type is the type of disk to create.
-	Type DiskType
-	// Files are the files to create in the new disk.
-	Files []DiskFile
-	// Overwrite specifies if the image file already exists whether
-	// we should overwrite it or return an error.
-	Overwrite bool
-}
-
-// DiskFile represents a file to create in a disk.
-type DiskFile struct {
-	// Path is the path in the disk image for the file.
-	Path string
-	// ContentBase64 is the content of the file encoded as base64.
-	ContentBase64 string
 }

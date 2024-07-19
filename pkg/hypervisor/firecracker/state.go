@@ -13,82 +13,63 @@ import (
 	"github.com/spf13/afero"
 )
 
-type State interface {
-	Root() string
-
-	PID() (int, error)
-	PIDPath() string
-	SetPid(pid int) error
-
-	LogPath() string
-	MetricsPath() string
-	StdoutPath() string
-	StderrPath() string
-
-	ConfigPath() string
-	Config() (VmmConfig, error)
-	SetConfig(cfg *VmmConfig) error
-
-	MetadataPath() string
-	Metadata() (Metadata, error)
-	SetMetadata(meta *Metadata) error
-
-	Delete() error
+type State struct {
+	stateRoot string
+	fs        afero.Fs
 }
 
-func NewState(vmid models.VMID, stateDir string, fs afero.Fs) State {
-	return &fsState{
+func NewState(vmid models.VMID, stateDir string, fs afero.Fs) *State {
+	return &State{
 		stateRoot: fmt.Sprintf("%s/%s", stateDir, vmid.String()),
 		fs:        fs,
 	}
 }
 
-type fsState struct {
-	stateRoot string
-	fs        afero.Fs
-}
-
-func (s *fsState) Delete() error {
+func (s *State) Delete() error {
 	return os.RemoveAll(s.stateRoot)
 }
 
-func (s *fsState) Root() string {
+func (s *State) Root() string {
 	return s.stateRoot
 }
 
-func (s *fsState) PIDPath() string {
+func (s *State) PIDPath() string {
 	return fmt.Sprintf("%s/firecracker.pid", s.stateRoot)
 }
 
-func (s *fsState) PID() (int, error) {
+func (s *State) PID() (int, error) {
 	return shared.PIDReadFromFile(s.PIDPath(), s.fs)
 }
 
-func (s *fsState) LogPath() string {
+func (s *State) VSockPath() string {
+	return fmt.Sprintf("%s/firecracker.vsock", s.stateRoot)
+}
+
+func (s *State) LogPath() string {
 	return fmt.Sprintf("%s/firecracker.log", s.stateRoot)
 }
 
-func (s *fsState) MetricsPath() string {
+func (s *State) MetricsPath() string {
 	return fmt.Sprintf("%s/firecracker.metrics", s.stateRoot)
 }
 
-func (s *fsState) StdoutPath() string {
+func (s *State) StdoutPath() string {
 	return fmt.Sprintf("%s/firecracker.stdout", s.stateRoot)
 }
 
-func (s *fsState) StderrPath() string {
+func (s *State) StderrPath() string {
 	return fmt.Sprintf("%s/firecracker.stderr", s.stateRoot)
 }
 
-func (s *fsState) SetPid(pid int) error {
+func (s *State) SetPid(pid int) error {
 	return shared.PIDWriteToFile(pid, s.PIDPath(), s.fs)
 }
 
-func (s *fsState) ConfigPath() string {
+func (s *State) ConfigPath() string {
 	return fmt.Sprintf("%s/firecracker.cfg", s.stateRoot)
 }
 
-func (s *fsState) Config() (VmmConfig, error) {
+func (s *State) Config() (VmmConfig, error) {
 	cfg := VmmConfig{}
 
 	err := s.readJSONFile(&cfg, s.ConfigPath())
@@ -99,7 +80,7 @@ func (s *fsState) Config() (VmmConfig, error) {
 	return cfg, nil
 }
 
-func (s *fsState) SetConfig(cfg *VmmConfig) error {
+func (s *State) SetConfig(cfg *VmmConfig) error {
 	err := s.writeToFileAsJSON(cfg, s.ConfigPath())
 	if err != nil {
 		return fmt.Errorf("firecracker config: %w", err)
@@ -108,7 +89,7 @@ func (s *fsState) SetConfig(cfg *VmmConfig) error {
 	return nil
 }
 
-func (s *fsState) SetMetadata(meta *Metadata) error {
+func (s *State) SetMetadata(meta *Metadata) error {
 	decoded := &Metadata{
 		Latest: map[string]string{},
 	}
@@ -132,7 +113,7 @@ func (s *fsState) SetMetadata(meta *Metadata) error {
 	return nil
 }
 
-func (s *fsState) Metadata() (Metadata, error) {
+func (s *State) Metadata() (Metadata, error) {
 	meta := Metadata{}
 
 	err := s.readJSONFile(&meta, s.ConfigPath())
@@ -143,11 +124,11 @@ func (s *fsState) Metadata() (Metadata, error) {
 	return meta, nil
 }
 
-func (s *fsState) MetadataPath() string {
+func (s *State) MetadataPath() string {
 	return fmt.Sprintf("%s/metadata.json", s.stateRoot)
 }
 
-func (s *fsState) readJSONFile(cfg interface{}, inputFile string) error {
+func (s *State) readJSONFile(cfg interface{}, inputFile string) error {
 	file, err := s.fs.Open(inputFile)
 	if err != nil {
 		return fmt.Errorf("opening file %s: %w", inputFile, err)
@@ -166,7 +147,7 @@ func (s *fsState) readJSONFile(cfg interface{}, inputFile string) error {
 	return nil
 }
 
-func (s *fsState) writeToFileAsJSON(cfg interface{}, outputFilePath string) error {
+func (s *State) writeToFileAsJSON(cfg interface{}, outputFilePath string) error {
 	data, err := json.MarshalIndent(cfg, "", " ")
 	if err != nil {
 		return fmt.Errorf("marshalling: %w", err)

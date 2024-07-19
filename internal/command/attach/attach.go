@@ -1,21 +1,20 @@
-package kill
+package attach
 
 import (
 	"context"
-	"github.com/spf13/cobra"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"os"
+
+	"github.com/spf13/cobra"
 	cmdflags "vistara-node/internal/command/flags"
 	"vistara-node/internal/config"
-	"vistara-node/pkg/api/services/microvm"
+	"vistara-node/pkg/containerd"
 	"vistara-node/pkg/flags"
 )
 
 func NewCommand(cfg *config.Config) (*cobra.Command, error) {
 	cmd := &cobra.Command{
-		Use:   "kill",
-		Short: "kill a VM",
+		Use:   "attach",
+		Short: "attach to a VM",
 		Args:  cobra.ExactArgs(1),
 		PreRunE: func(c *cobra.Command, _ []string) error {
 			flags.BindCommandToViper(c)
@@ -31,23 +30,16 @@ func NewCommand(cfg *config.Config) (*cobra.Command, error) {
 }
 
 func run(ctx context.Context, cfg *config.Config) error {
-	conn, err := grpc.NewClient(cfg.GRPCAPIEndpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	repo, err := containerd.NewMicroVMRepository(&containerd.Config{
+		SnapshotterKernel:  cfg.CtrSnapshotterKernel,
+		SnapshotterVolume:  "",
+		SocketPath:         cfg.CtrSocketPath,
+		Namespace:          cfg.CtrNamespace,
+		ContainerNamespace: cfg.CtrNamespace + "-container",
+	})
 	if err != nil {
 		return err
 	}
 
-	defer conn.Close()
-
-	request := microvm.DeleteMicroVMRequest{
-		Id: os.Args[2],
-	}
-
-	vmServiceClient := microvm.NewVMServiceClient(conn)
-	_, err = vmServiceClient.Delete(ctx, &request)
-
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return repo.Attach(ctx, os.Args[2])
 }

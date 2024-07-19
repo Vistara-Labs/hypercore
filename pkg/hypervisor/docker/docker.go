@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"vistara-node/pkg/api/types"
 	"vistara-node/pkg/hypervisor/shared"
 	"vistara-node/pkg/models"
 	"vistara-node/pkg/ports"
@@ -76,10 +75,6 @@ func (d *DockerService) Start(ctx context.Context, vm *models.MicroVM) error {
 	return nil
 }
 
-func (d *DockerService) GetRuntimeData(ctx context.Context, vm *models.MicroVM) (*types.MicroVMRuntimeData, error) {
-	return nil, nil
-}
-
 func (d *DockerService) Stop(ctx context.Context, vm *models.MicroVM) error {
 	containerId, ok := d.idToContainer[vm.ID.String()]
 	if !ok {
@@ -94,6 +89,14 @@ func (d *DockerService) Stop(ctx context.Context, vm *models.MicroVM) error {
 	}
 
 	return nil
+}
+
+func (d *DockerService) Pid(ctx context.Context, vm *models.MicroVM) (int, error) {
+	panic("TODO")
+}
+
+func (d *DockerService) VSockPath(vm *models.MicroVM) string {
+	panic("Unsupported")
 }
 
 func (d *DockerService) State(ctx context.Context, id string) (ports.MicroVMState, error) {

@@ -10,126 +10,82 @@ Vistara Hypercore is an advanced Hypervisor Abstraction Layer designed to manage
 
 ## Getting Started
 
-### Prerequisites
+### Building
 
-- Go 1.20 or later
-- Protobuf compiler (protoc)
-- gRPC tools for Go
-
-### Installation
-
-Clone the repository and build the project:
+Clone the repository:
 
 ```bash
 git clone https://github.com/vistara-labs/hypercore.git
-cd hypercore
-make build
 ```
 
-
-### Running the Service
-
-To start the Vistara Hypercore service:
+Build the unified hypercore binary for spawning and managing the lifecycle of MicroVMs. Depending on the binary name it either runs the hypercore CLI, or the containerd shim. The shim must be present in `$PATH` so we can symlink it to `/usr/local/bin`:
 
 ```bash
-./vistarad run
+$ go build -o containerd-shim-hypercore-example cmd/main.go
+# Assuming /usr/local/bin is in $PATH, we can symlink the binary there
+$ sudo ln -s $PWD/containerd-shim-hypercore-example /usr/local/bin/
+# For hypercore CLI
+$ ln -s containerd-shim-hypercore-example hypercore
 ```
 
-This command initializes the service and starts listening for API calls to manage microVMs.
+### Containerd Setup
 
-### Usage
-
-Example: Creating a MicroVM
-Provision a new microVM using a simple command:
-
-WIP:
+We run a separate instance of containerd containing the relevant snapshotter configuration for it to play nicely with hypercore, it will take care of the scratch file setup required by the `blockfile` snapshotter, and all the state will be stored in `/var/lib/hypercore`:
 
 ```bash
-# vis run --config hac.toml
+./scripts/containerd.sh
 ```
 
-### API Example
+### Spawning VMs
 
-Create a microVM using the gRPC API:
+1. Setup a `hac.toml` file detailing the VM requirements:
 
 ```bash
+[spacecore]
+name = "Test Node"
+description = "Testing"
 
-# kernel image, root volume are hardcoded for now
-grpcurl -plaintext -H "tmptmp: 1" -d '{
-    "microvm": {
-      "id": "14",
-      "labels": {},
-      "vcpu": 2,
-      "memoryInMb": 1024,
-      "additionalVolumes": [],
-      "interfaces": [
-        {
-          "type": "TAP",
-          "guestMac": "02:FC:00:00:00:00",
-          "overrides": {
-            "bridgeName": "eth0"
-          },
-          "address": {
-            "address": "192.254.0.22/32"
-          },
-          "deviceId": "eth0"
-        }
-      ],
-      "metadata": {},
-      "kernel": {
-        "image": "/tmp/test",
-        "addNetworkConfig": true
-      },
-      "uid": "testinguid",
-      "provider": "firecracker",
-      "rootVolume": {
-        "id": "1"
-      },
-      "namespace": "test-b8"
-    },
-    "metadata": {}
-}' localhost:9090 vm.services.api.VMService.Create
+[hardware] # resource allocation
+cores = 4 # Number of CPU cores
+memory = 4096 # Memory in MB
+kernel = "/home/dev/images/vmlinux-5.10.217"
+drive = "/home/dev/firecracker-containerd/tools/image-builder/rootfs.img"
+ref = "docker.io/library/alpine:latest" # Reference of the image to use
+interface = "ens2" # Host interface to bridge with the VM, eg. eth0
 ```
 
+2. Use the hypercore CLI to spawn the VM (using firecracker as the VM provider):
 
-### Project Structure
+```bash
+$ sudo ./hypercore spawn --provider firecracker
+Creating VM '67a20540-5cd6-4445-adc6-ac609575546a' with config {Spacecore:{name: description:} Hardware:{Cores:4 Memory:4096 Kernel:/home/dev/images/vmlinux-5.10.217 Drive:/home/dev/firecracker-containerd/tools/image-builder/rootfs.img Interface:ens2 Ref:docker.io/library/alpine:latest}}
+ID: 08cf7306-1af6-48f2-b2f4-6d638fc428c0
+```
 
-This repo is inspired by the Flintlock project. https://github.com/weaveworks-liquidmetal/flintlock
-Vistara Hypercore reuses a lot of code from the Flintlock project and create hypervisor abstraction interface and refactored the code to make it more modular and extensible.
+3. Attach to the VM using the hypercore CLI
 
-Below is the project structure detailing major components and their organization within the repository:
-
-```plaintext
-├── cmd/                       #  Command line interface applications.
-│   └── vistarad/main.go       #  Entry point for the Vistara daemon.
-│
-├── internal/
-│   └── command/              # Handles CLI commands and options.
-│   └── config/               # Configuration management utilities.
-│   └── inject/               # Dependency injection setup.
-│
-├── pkg/
-│   └── api/                  # Handles all API requests for the service.
-│   └── services/             # Defines the microVM service and associated gRPC protocol files.
-│   └── app/                  # Core application logic including initialization and command handling.
-│   └── cloudinit/            # Manages cloud-init configurations for instances.
-│   └── containerd/           # Integration with containerd for container management.
-│   └── hypervisor/           # Abstractions for different hypervisor technologies like Firecracker.
-│   └── models/               # Data models used throughout the application.
-│   └── network/              # Network management utilities.
-│   └── processors/           # Processors for handling specific backend tasks like VM lifecycle.
-│   └── queue/                # Management of job queues for task processing.
-
+```bash
+$ sudo ./hypercore attach 08cf7306-1af6-48f2-b2f4-6d638fc428c0
+whoami
+root
+echo $$
+1
+cat /etc/os-release
+NAME="Alpine Linux"
+ID=alpine
+VERSION_ID=3.20.1
+PRETTY_NAME="Alpine Linux v3.20"
+HOME_URL="https://alpinelinux.org/"
+BUG_REPORT_URL="https://gitlab.alpinelinux.org/alpine/aports/-/issues"
+```
 
 ### Important Components
 
 - **Hypervisor Integration**: In `/pkg/hypervisor`, this module supports different hypervisors and is crucial for the creation and management of microVMs.
-- **API and gRPC Services**: Defined within `/pkg/api`, facilitating communication and command execution through gRPC and REST (WIP).
 - **Containerd Integration**: In `/pkg/containerd`, integrating with containerd to manage containers and their lifecycles efficiently.
+- **Containerd Shim**: In `/pkg/shim`, contains a runtime shim for containerd which spawns and manages the lifecycle of MicroVMs with the helpers for various hypervisors
 - **Network Services**: Found in `/pkg/network`, crucial for setting up and managing network interfaces and configurations.
 - **Cloud-init Configuration**: Located under `/pkg/cloudinit`, responsible for generating cloud-init configurations for instances.
-- **Processors and Queue Services**: In `/pkg/processors` and `/pkg/queue`, respectively, these components manage asynchronous tasks and job queues for efficient task processing.
-```
 
 ### Contributing
 

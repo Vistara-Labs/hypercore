@@ -1,20 +1,21 @@
 package spawn
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"github.com/containerd/containerd/cio"
+	"github.com/containerd/typeurl/v2"
 	"github.com/google/uuid"
 	toml "github.com/pelletier/go-toml/v2"
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"os"
 	"path/filepath"
 	cmdflags "vistara-node/internal/command/flags"
 	"vistara-node/internal/config"
-	"vistara-node/pkg/api/services/microvm"
-	"vistara-node/pkg/api/types"
+	"vistara-node/pkg/containerd"
 	"vistara-node/pkg/flags"
+	"vistara-node/pkg/models"
 )
 
 type HacConfig struct {
@@ -50,12 +51,18 @@ func NewCommand(cfg *config.Config) (*cobra.Command, error) {
 }
 
 func run(ctx context.Context, cfg *config.Config) error {
-	conn, err := grpc.NewClient(cfg.GRPCAPIEndpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	typeurl.Register(&models.MicroVMSpec{}, "models.MicroVMSpec")
+
+	repo, err := containerd.NewMicroVMRepository(&containerd.Config{
+		SnapshotterKernel:  cfg.CtrSnapshotterKernel,
+		SnapshotterVolume:  "",
+		SocketPath:         cfg.CtrSocketPath,
+		Namespace:          cfg.CtrNamespace,
+		ContainerNamespace: cfg.CtrNamespace + "-container",
+	})
 	if err != nil {
 		return err
 	}
-
-	defer conn.Close()
 
 	hacPath, err := filepath.Abs(cfg.HACFile)
 	if err != nil {
@@ -74,30 +81,51 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 	fmt.Printf("Creating VM '%s' with config %+v\n", vmUUID, hacConfig)
 
-	// TODO figure out how to get the appropriate MAC for a VM image
-	guestMac := "06:00:AC:10:00:02"
+	var id string
 
-	request := microvm.CreateMicroVMRequest{
-		Microvm: &types.MicroVMSpec{
-			Id:         vmUUID,
-			Vcpu:       hacConfig.Hardware.Cores,
-			MemoryInMb: hacConfig.Hardware.Memory,
-			KernelPath: &hacConfig.Hardware.Kernel,
-			RootfsPath: &hacConfig.Hardware.Drive,
-			GuestMac:   &guestMac,
-			HostNetDev: &hacConfig.Hardware.Interface,
-			ImageRef:   &hacConfig.Hardware.Ref,
-			Provider:   cfg.DefaultVMProvider,
-		},
+	switch cfg.DefaultVMProvider {
+	case "runc":
+		id, err = repo.CreateContainer(ctx, containerd.CreateContainerOpts{
+			ImageRef:    hacConfig.Hardware.Ref,
+			Snapshotter: "",
+			Runtime: struct {
+				Name    string
+				Options interface{}
+			}{
+				Name: "io.containerd.runc.v2",
+			},
+			CioCreator: cio.NewCreator(cio.WithStdio),
+		})
+	case "firecracker":
+		fallthrough
+	case "cloudhypervisor":
+		id, err = repo.CreateContainer(ctx, containerd.CreateContainerOpts{
+			ImageRef:    hacConfig.Hardware.Ref,
+			Snapshotter: "blockfile",
+			Runtime: struct {
+				Name    string
+				Options interface{}
+			}{
+				Name: "hypercore.example",
+				Options: &models.MicroVMSpec{
+					Provider:   cfg.DefaultVMProvider,
+					VCPU:       hacConfig.Hardware.Cores,
+					MemoryInMb: hacConfig.Hardware.Memory,
+					HostNetDev: hacConfig.Hardware.Interface,
+					Kernel:     hacConfig.Hardware.Kernel,
+					RootfsPath: hacConfig.Hardware.Drive,
+				},
+			},
+			CioCreator: cio.NewCreator(cio.WithStreams(&bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{})),
+		})
+	case "docker":
+		panic("TODO")
 	}
-
-	vmServiceClient := microvm.NewVMServiceClient(conn)
-	response, err := vmServiceClient.Create(ctx, &request)
 
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Response: %v\n", response)
+	fmt.Printf("ID: %s\n", id)
 	return nil
 }
