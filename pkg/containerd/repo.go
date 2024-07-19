@@ -3,7 +3,9 @@ package containerd
 import (
 	"context"
 	"fmt"
+	"strings"
 	"syscall"
+	"time"
 	"vistara-node/pkg/log"
 
 	"github.com/containerd/containerd"
@@ -33,9 +35,8 @@ type CreateContainerOpts struct {
 }
 
 type containerdRepo struct {
-	client       *containerd.Client
-	config       *Config
-	containerMap map[string]RunningContainer
+	client *containerd.Client
+	config *Config
 }
 
 func NewMicroVMRepository(cfg *Config) (*containerdRepo, error) {
@@ -45,9 +46,8 @@ func NewMicroVMRepository(cfg *Config) (*containerdRepo, error) {
 	}
 
 	return &containerdRepo{
-		client:       client,
-		config:       cfg,
-		containerMap: make(map[string]RunningContainer),
+		client: client,
+		config: cfg,
 	}, nil
 }
 
@@ -148,19 +148,9 @@ func (r *containerdRepo) CreateContainer(ctx context.Context, opts CreateContain
 		}
 	}()
 
-	exitStatusChan, err := task.Wait(namespaceCtx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get exit status chan for container %s task: %w", containerId, err)
-	}
-
 	err = task.Start(namespaceCtx)
 	if err != nil {
 		return "", fmt.Errorf("failed to start task for container %s: %w", containerId, err)
-	}
-
-	r.containerMap[containerId] = RunningContainer{
-		ExitStatusChan: exitStatusChan,
-		Task:           task,
 	}
 
 	return containerId, nil
@@ -169,26 +159,55 @@ func (r *containerdRepo) CreateContainer(ctx context.Context, opts CreateContain
 func (r *containerdRepo) DeleteContainer(ctx context.Context, containerId string) (uint32, error) {
 	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
 
-	container, exists := r.containerMap[containerId]
-	if !exists {
-		return 0, fmt.Errorf("container %s not found", containerId)
-	}
-
-	err := container.Task.Kill(namespaceCtx, syscall.SIGTERM)
+	container, err := r.client.LoadContainer(namespaceCtx, containerId)
 	if err != nil {
-		return 0, fmt.Errorf("failed to kill task: %w", err)
+		return 0, fmt.Errorf("failed to load container %s: %w", containerId, err)
 	}
 
-	delete(r.containerMap, containerId)
+	task, err := container.Task(namespaceCtx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get task: %w", err)
+	}
 
-	status := <-container.ExitStatusChan
+	statusC, err := task.Wait(namespaceCtx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get exit status chan for container %s task: %w", containerId, err)
+	}
 
-	code, _, err := status.Result()
+	// If the task was not found, we can just stop the container
+	if err := task.Kill(namespaceCtx, syscall.SIGTERM); err != nil {
+		// TODO use github.com/containerd/errdefs
+		if !strings.Contains(err.Error(), "not found") {
+			return 0, fmt.Errorf("failed to kill task: %w", err)
+		}
+	}
+
+	var code uint32
+
+	select {
+	case status := <-statusC:
+		code, _, err = status.Result()
+	case <-time.After(time.Second * 5):
+		if err := task.Kill(namespaceCtx, syscall.SIGKILL); err != nil {
+			return 0, fmt.Errorf("failed to kill task: %w", err)
+		}
+
+		code, _, err = (<-statusC).Result()
+	}
+
 	if err != nil {
 		return 0, fmt.Errorf("failed to get exit status: %w", err)
 	}
 
 	log.GetLogger(ctx).Infof("container %s exited with status %d", containerId, code)
+
+	if _, err := task.Delete(namespaceCtx); err != nil {
+		return 0, fmt.Errorf("failed to delete task: %w", err)
+	}
+
+	if err := container.Delete(namespaceCtx, containerd.WithSnapshotCleanup); err != nil {
+		return 0, fmt.Errorf("failed to delete container %s: %w", containerId, err)
+	}
 
 	return code, nil
 }
