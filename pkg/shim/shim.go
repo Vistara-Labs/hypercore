@@ -212,7 +212,7 @@ func (s *HyperShim) State(ctx context.Context, req *taskAPI.StateRequest) (*task
 
 func (s *HyperShim) vmCompletion(waitErr error) {
 	if waitErr != nil {
-		log.G(s.shimCtx).Errorf("failed to wait for process: %w", waitErr)
+		log.G(s.shimCtx).Errorf("failed to wait for process: %s", waitErr)
 	}
 
 	close(s.vmState.vmStopped)
