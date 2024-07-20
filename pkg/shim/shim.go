@@ -219,7 +219,7 @@ func (s *HyperShim) vmCompletion(waitErr error) {
 	s.shimCancel()
 }
 
-func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) (*taskAPI.CreateTaskResponse, error) {
+func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) (_ *taskAPI.CreateTaskResponse, retErr error) {
 	if s.vmState != nil {
 		return nil, errors.New("Create called multiple times")
 	}
@@ -262,6 +262,18 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 	}
 
 	s.vmState = hypervisorState
+
+	defer func() {
+		if retErr != nil {
+			log.G(ctx).Errorf("Create failed with err: %w, cleaning up VM and cancelling shim", err)
+
+			if err := s.vmState.vmSvc.Stop(ctx, s.vmState.vm); err != nil {
+				log.G(ctx).Errorf("Failed to stop VM: %w", err)
+			}
+
+			s.shimCancel()
+		}
+	}()
 
 	conn, err := vsock.DialContext(ctx, hypervisorState.vmSvc.VSockPath(s.vmState.vm), VSockPort, vsock.WithLogger(log.G(ctx)))
 	if err != nil {
