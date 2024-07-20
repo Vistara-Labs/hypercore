@@ -79,13 +79,32 @@ HOME_URL="https://alpinelinux.org/"
 BUG_REPORT_URL="https://gitlab.alpinelinux.org/alpine/aports/-/issues"
 ```
 
-### Important Components
+### Architecture Overview
 
-- **Hypervisor Integration**: In `/pkg/hypervisor`, this module supports different hypervisors and is crucial for the creation and management of microVMs.
-- **Containerd Integration**: In `/pkg/containerd`, integrating with containerd to manage containers and their lifecycles efficiently.
-- **Containerd Shim**: In `/pkg/shim`, contains a runtime shim for containerd which spawns and manages the lifecycle of MicroVMs with the helpers for various hypervisors
-- **Network Services**: Found in `/pkg/network`, crucial for setting up and managing network interfaces and configurations.
-- **Cloud-init Configuration**: Located under `/pkg/cloudinit`, responsible for generating cloud-init configurations for instances.
+```
+                        TTRPC                       TTRPC                  TTRPC/VSOCK            TTRPC
+Hypercore CLI (client) <-----> containerd (daemon) <-----> Hypercore Shim <-----------> VM Agent <-----> runc (in VM)
+```
+
+- [**Hypercore CLI**](internal/hypercore): The CLI helps perform actions like creating VMs, attaching to them, and cleaning them up, leveraging [`containerd`](https://github.com/containerd/containerd) for pulling images, invoking the `blockfile` snapshotter, and talking with the shim
+
+- [**Hypercore Shim**](pkg/shim): The shim manages the whole VM lifecycle, from provisioning the VM, communicating with the agent, and cleaning up the VM and it's associated resources
+
+- [**VM Agent**](https://github.com/Vistara-Labs/firecracker-containerd/tree/feat-hypercore): The agent is responsible for spawning tasks inside the VM, proxying IO over VSOCK, and handling various API requests defined by containerd. Internally, all actions are directly or indirectly handed off to `runc` for another layer of sandboxing
+
+This diagram shows how various components interact to spawn a VM:
+
+```
+               TTRPC                       TTRPC                                 TTRPC/VSOCK                               TTRPC
+Hypercore CLI <-----> containerd <-----------------------> Hypercore Shim <-------------------------> VM Agent <----------------------------> runc
+                       ` Pull image                         ` Create TAP device for networking         ` Prepare the environment
+                                                                                                         for runc by mounting the snapshot
+                       ` Invoke snapshotter for raw image   ` Spawn the VM with relevant config/args   ` Forward API requests to runc
+                                                              including network interface details      ` Proxy IO for attaching to / spawning
+                                                              and attaching the image snapshot           tasks, forwarding logs, etc.
+                                                              as a mountable block device
+                       ` Spawn shim to create VM
+```
 
 ### Contributing
 
