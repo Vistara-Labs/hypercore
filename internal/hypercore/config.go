@@ -1,4 +1,4 @@
-package main
+package hypercore
 
 import "vistara-node/pkg/log"
 

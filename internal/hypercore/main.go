@@ -1,4 +1,4 @@
-package main
+package hypercore
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"vistara-node/pkg/log"
 )
 
-func main() {
+func Run() {
 	cfg := &Config{}
 	cmd := &cobra.Command{
 		Use:   "vs",
