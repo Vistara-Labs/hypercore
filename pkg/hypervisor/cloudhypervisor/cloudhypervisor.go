@@ -103,7 +103,7 @@ func (c *CloudHypervisorService) Start(ctx context.Context, vm *models.MicroVM, 
 
 func (c *CloudHypervisorService) startMicroVM(vm *models.MicroVM, vmState *State, status *models.NetworkInterfaceStatus, completionFn func(error)) (*os.Process, error) {
 	kernelCmdLine := DefaultKernelCmdLine()
-	kernelCmdLine.Set("ip", fmt.Sprintf("%s::%s:%s::eth0::off", status.TapDetails.VmIp.To4(), status.TapDetails.TapIp.To4(), status.TapDetails.Mask.To4()))
+	kernelCmdLine.Set("ip", fmt.Sprintf("%s::%s:%s::eth0::%s", status.TapDetails.VmIp.To4(), status.TapDetails.TapIp.To4(), status.TapDetails.Mask.To4(), "1.1.1.1"))
 
 	args := []string{
 		"--log-file",

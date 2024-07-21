@@ -80,7 +80,7 @@ func WithMicroVM(vm *models.MicroVM, status *models.NetworkInterfaceStatus, vsoc
 		tapDetails := network.GetTapDetails(tapIdx)
 
 		kernelCmdLine := DefaultKernelCmdLine()
-		kernelCmdLine.Set("ip", fmt.Sprintf("%s::%s:%s::eth0::off", tapDetails.VmIp.To4(), tapDetails.TapIp.To4(), tapDetails.Mask.To4()))
+		kernelCmdLine.Set("ip", fmt.Sprintf("%s::%s:%s::eth0::%s", tapDetails.VmIp.To4(), tapDetails.TapIp.To4(), tapDetails.Mask.To4(), "1.1.1.1"))
 		kernelArgs := kernelCmdLine.String()
 
 		bootSourceConfig := BootSourceConfig{
