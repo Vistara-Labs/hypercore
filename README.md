@@ -21,11 +21,9 @@ git clone https://github.com/vistara-labs/hypercore.git
 Build the unified hypercore binary for spawning and managing the lifecycle of MicroVMs. Depending on the binary name it either runs the hypercore CLI, or the containerd shim. The shim must be present in `$PATH` so we can symlink it to `/usr/local/bin`:
 
 ```bash
-$ go build -o containerd-shim-hypercore-example cmd/main.go
+$ make build
 # Assuming /usr/local/bin is in $PATH, we can symlink the binary there
-$ sudo ln -s $PWD/containerd-shim-hypercore-example /usr/local/bin/
-# For hypercore CLI
-$ ln -s containerd-shim-hypercore-example hypercore
+$ sudo ln -s $PWD/bin/containerd-shim-hypercore-example /usr/local/bin/
 ```
 
 ### Containerd Setup
@@ -57,7 +55,7 @@ interface = "ens2" # Host interface to bridge with the VM, eg. eth0
 2. Use the hypercore CLI to spawn the VM (using firecracker as the VM provider):
 
 ```bash
-$ sudo ./hypercore spawn --provider firecracker
+$ sudo ./bin/hypercore spawn --provider firecracker
 Creating VM '67a20540-5cd6-4445-adc6-ac609575546a' with config {Spacecore:{name: description:} Hardware:{Cores:4 Memory:4096 Kernel:/home/dev/images/vmlinux-5.10.217 Drive:/home/dev/firecracker-containerd/tools/image-builder/rootfs.img Interface:ens2 Ref:docker.io/library/alpine:latest}}
 ID: 08cf7306-1af6-48f2-b2f4-6d638fc428c0
 ```
@@ -65,7 +63,7 @@ ID: 08cf7306-1af6-48f2-b2f4-6d638fc428c0
 3. Attach to the VM using the hypercore CLI
 
 ```bash
-$ sudo ./hypercore attach 08cf7306-1af6-48f2-b2f4-6d638fc428c0
+$ sudo ./bin/hypercore attach 08cf7306-1af6-48f2-b2f4-6d638fc428c0
 whoami
 root
 echo $$
@@ -80,11 +78,6 @@ BUG_REPORT_URL="https://gitlab.alpinelinux.org/alpine/aports/-/issues"
 ```
 
 ### Architecture Overview
-
-```
-                        TTRPC                       TTRPC                  TTRPC/VSOCK            TTRPC
-Hypercore CLI (client) <-----> containerd (daemon) <-----> Hypercore Shim <-----------> VM Agent <-----> runc (in VM)
-```
 
 - [**Hypercore CLI**](internal/hypercore): The CLI helps perform actions like creating VMs, attaching to them, and cleaning them up, leveraging [`containerd`](https://github.com/containerd/containerd) for pulling images, invoking the `blockfile` snapshotter, and talking with the shim
 
