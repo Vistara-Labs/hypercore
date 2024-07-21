@@ -275,7 +275,9 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 		}
 	}()
 
-	conn, err := vsock.DialContext(ctx, hypervisorState.vmSvc.VSockPath(s.vmState.vm), VSockPort, vsock.WithLogger(log.G(ctx)))
+	// Set the dial timeout to 1 second to give enough time to firecracker or
+	// cloud-hypervisor to create the VSOCK file
+	conn, err := vsock.DialContext(ctx, hypervisorState.vmSvc.VSockPath(s.vmState.vm), VSockPort, vsock.WithDialTimeout(time.Second), vsock.WithLogger(log.G(ctx)))
 	if err != nil {
 		return nil, err
 	}
