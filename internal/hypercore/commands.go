@@ -164,7 +164,15 @@ func SpawnCommand(cfg *Config) *cobra.Command {
 					CioCreator: cio.NewCreator(cio.WithStreams(&bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{})),
 				})
 			case "docker":
-				panic("TODO")
+				client, err := NewDockerClient()
+				if err != nil {
+					return err
+				}
+
+				id, err = client.Start(cmd.Context(), hacConfig.Hardware.Ref)
+				if err != nil {
+					return err
+				}
 			}
 
 			if err != nil {
