@@ -2,18 +2,21 @@ package hypercore
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/spf13/cobra"
 	"vistara-node/pkg/containerd"
+
+	"github.com/spf13/cobra"
+
+	"vistara-node/pkg/models"
 
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/typeurl/v2"
 	"github.com/google/uuid"
 	toml "github.com/pelletier/go-toml/v2"
-	"vistara-node/pkg/models"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type HacConfig struct {
@@ -46,9 +49,10 @@ func AttachCommand(cfg *Config) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		PreRunE: func(c *cobra.Command, _ []string) error {
 			BindCommandToViper(c)
+
 			return nil
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			repo, err := containerd.NewMicroVMRepository(containerdConfig(cfg))
 			if err != nil {
 				return err
@@ -59,6 +63,7 @@ func AttachCommand(cfg *Config) *cobra.Command {
 	}
 
 	AddCommonFlags(cmd, cfg)
+
 	return cmd
 }
 
@@ -68,9 +73,10 @@ func ListCommand(cfg *Config) *cobra.Command {
 		Short: "List running VMs",
 		PreRunE: func(c *cobra.Command, _ []string) error {
 			BindCommandToViper(c)
+
 			return nil
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			repo, err := containerd.NewMicroVMRepository(containerdConfig(cfg))
 			if err != nil {
 				return err
@@ -82,7 +88,7 @@ func ListCommand(cfg *Config) *cobra.Command {
 			}
 
 			for _, task := range tasks {
-				fmt.Printf("Task %s, Container %s\n", task.ID, task.ContainerID)
+				log.Infof("Task %s, Container %s\n", task.GetID(), task.GetContainerID())
 			}
 
 			return nil
@@ -90,6 +96,7 @@ func ListCommand(cfg *Config) *cobra.Command {
 	}
 
 	AddCommonFlags(cmd, cfg)
+
 	return cmd
 }
 
@@ -99,9 +106,10 @@ func SpawnCommand(cfg *Config) *cobra.Command {
 		Short: "Spawn a VM under Hypercore",
 		PreRunE: func(c *cobra.Command, _ []string) error {
 			BindCommandToViper(c)
+
 			return nil
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			typeurl.Register(&models.MicroVMSpec{}, "models.MicroVMSpec")
 
 			repo, err := containerd.NewMicroVMRepository(containerdConfig(cfg))
@@ -122,9 +130,11 @@ func SpawnCommand(cfg *Config) *cobra.Command {
 			vmUUID := uuid.NewString()
 			hacConfig := HacConfig{}
 
-			toml.Unmarshal(hacContents, &hacConfig)
+			if err := toml.Unmarshal(hacContents, &hacConfig); err != nil {
+				return err
+			}
 
-			fmt.Printf("Creating VM '%s' with config %+v\n", vmUUID, hacConfig)
+			log.Infof("Creating VM '%s' with config %+v\n", vmUUID, hacConfig)
 
 			var id string
 
@@ -179,12 +189,14 @@ func SpawnCommand(cfg *Config) *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("ID: %s\n", id)
+			log.Infof("ID: %s\n", id)
+
 			return nil
 		},
 	}
 
 	AddCommonFlags(cmd, cfg)
+
 	return cmd
 }
 
@@ -195,9 +207,10 @@ func StopCommand(cfg *Config) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		PreRunE: func(c *cobra.Command, _ []string) error {
 			BindCommandToViper(c)
+
 			return nil
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			repo, err := containerd.NewMicroVMRepository(containerdConfig(cfg))
 			if err != nil {
 				return err
@@ -209,10 +222,12 @@ func StopCommand(cfg *Config) *cobra.Command {
 			}
 
 			os.Exit(int(code))
+
 			return nil
 		},
 	}
 
 	AddCommonFlags(cmd, cfg)
+
 	return cmd
 }

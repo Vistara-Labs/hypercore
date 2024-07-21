@@ -55,12 +55,12 @@ func (c DockerClient) Start(ctx context.Context, imageRef string) (string, error
 	return "", nil
 }
 
-func (c DockerClient) Stop(ctx context.Context, containerId string) error {
+func (c DockerClient) Stop(ctx context.Context, containerID string) error {
 	timeout := 15
-	err := c.ContainerStop(ctx, containerId, container.StopOptions{Timeout: &timeout})
+	err := c.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &timeout})
 
 	if err != nil {
-		return fmt.Errorf("failed to remove container %s: %w", containerId, err)
+		return fmt.Errorf("failed to remove container %s: %w", containerID, err)
 	}
 
 	return nil

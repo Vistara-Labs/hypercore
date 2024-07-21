@@ -1,49 +1,36 @@
 package network
 
 import (
-	"context"
 	"fmt"
 	"vistara-node/pkg/errors"
-	"vistara-node/pkg/log"
 	"vistara-node/pkg/models"
 	"vistara-node/pkg/ports"
-
-	"github.com/sirupsen/logrus"
 )
 
 func NewNetworkInterface(vmid *models.VMID,
 	iface *models.NetworkInterface,
 	status *models.NetworkInterfaceStatus,
-	svc ports.NetworkService,
-) *createInterface {
-	return &createInterface{
+) *CreateInterface {
+	return &CreateInterface{
 		vmid:   vmid,
 		iface:  iface,
-		svc:    svc,
 		status: status,
 	}
 }
 
-type createInterface struct {
+type CreateInterface struct {
 	vmid   *models.VMID
 	iface  *models.NetworkInterface
 	status *models.NetworkInterfaceStatus
-
-	svc ports.NetworkService
 }
 
 // Create network interface
-func (s *createInterface) Name() string {
+func (s *CreateInterface) Name() string {
 	return "create_network_interface"
 }
 
 // Create will create the network interface.
-func (s *createInterface) Create(ctx context.Context) error {
-	logger := log.GetLogger(ctx).WithFields(logrus.Fields{
-		"step": s.Name(),
-	})
-	logger.Debug("running Create to create network interface")
-
+func (s *CreateInterface) Create() error {
 	if s.status == nil {
 		return errors.ErrMissingStatusInfo
 	}
@@ -55,7 +42,7 @@ func (s *createInterface) Create(ctx context.Context) error {
 
 	deviceName := fmt.Sprintf("hypercore-%d", ifaceIdx)
 
-	exists, err := s.svc.IfaceExists(ctx, deviceName)
+	exists, err := IfaceExists(deviceName)
 	if err != nil {
 		return fmt.Errorf("checking if networking interface exists: %w", err)
 	}
@@ -68,24 +55,16 @@ func (s *createInterface) Create(ctx context.Context) error {
 
 	input := &ports.IfaceCreateInput{
 		DeviceName: deviceName,
-		Type:       s.iface.Type,
-		MAC:        s.iface.GuestMAC,
-		Attach:     true,
 		BridgeName: s.iface.BridgeName,
-		IP4:        tapDetails.TapIp.String() + "/30",
+		IP4:        tapDetails.TapIP.String() + "/30",
 	}
 
-	if s.iface.Type == models.IfaceTypeTap && s.iface.AllowMetadataRequests {
-		input.Attach = false
-	}
-
-	output, err := s.svc.IfaceCreate(ctx, *input)
+	output, err := IfaceCreate(*input)
 	if err != nil {
 		return fmt.Errorf("creating network interface: %w", err)
 	}
 
 	s.status.HostDeviceName = deviceName
-	s.status.Index = output.Index
 	s.status.MACAddress = output.MAC
 	s.status.TapDetails = tapDetails
 
