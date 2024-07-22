@@ -6,6 +6,7 @@ toolchain go1.22.4
 
 require (
 	github.com/containerd/containerd/api v1.7.19
+	github.com/containerd/log v0.1.0
 	github.com/containerd/ttrpc v1.2.5
 	github.com/containerd/typeurl/v2 v2.2.0
 	github.com/coreos/go-iptables v0.7.0
@@ -33,7 +34,6 @@ require (
 	github.com/containerd/errdefs v0.1.0 // indirect
 	github.com/containerd/fifo v1.1.0 // indirect
 	github.com/containerd/go-runc v1.1.0 // indirect
-	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/platforms v0.2.1 // indirect
 	github.com/containernetworking/cni v1.2.2 // indirect
 	github.com/containernetworking/plugins v1.5.1 // indirect

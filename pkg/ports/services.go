@@ -13,22 +13,6 @@ type MicroVMService interface {
 	VSockPath(vm *models.MicroVM) string
 }
 
-// This state represents the state of the Firecracker MVM process itself
-// The state for the entire Hypercore MVM is represented in models.MicroVMState.
-type MicroVMState string
-
-// MachineMetrics is a metrics interface for providers.
-type MachineMetrics interface {
-	ToPrometheus() []byte
-}
-
-const (
-	MicroVMStateUnknown    MicroVMState = "unknown"
-	MicroVMStatePending    MicroVMState = "pending"
-	MicroVMStateConfigured MicroVMState = "configured"
-	MicroVMStateRunning    MicroVMState = "running"
-)
-
 // NetworkService is a port for a service that interacts with the network
 // stack on the host machine.
 type NetworkService interface {

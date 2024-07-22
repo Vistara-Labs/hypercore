@@ -20,11 +20,6 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
-type RunningContainer struct {
-	ExitStatusChan <-chan containerd.ExitStatus
-	Task           containerd.Task
-}
-
 type CreateContainerOpts struct {
 	ImageRef    string
 	Snapshotter string

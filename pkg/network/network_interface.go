@@ -2,7 +2,6 @@ package network
 
 import (
 	"fmt"
-	"vistara-node/pkg/errors"
 	"vistara-node/pkg/models"
 	"vistara-node/pkg/ports"
 )
@@ -29,10 +28,6 @@ func (s *CreateInterface) Name() string {
 
 // Create will create the network interface.
 func (s *CreateInterface) Create() error {
-	if s.status == nil {
-		return errors.ErrMissingStatusInfo
-	}
-
 	ifaceIdx, err := NewIfaceIdx()
 	if err != nil {
 		return fmt.Errorf("creating network interface id: %w", err)
