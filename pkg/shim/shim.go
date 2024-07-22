@@ -29,6 +29,7 @@ import (
 	"github.com/vistara-labs/firecracker-containerd/utils"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
 
+	"vistara-node/pkg/defaults"
 	"vistara-node/pkg/hypervisor/cloudhypervisor"
 	"vistara-node/pkg/hypervisor/firecracker"
 	"vistara-node/pkg/models"
@@ -230,11 +231,6 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 		return nil, fmt.Errorf("got non-ext4 rootfs: %s", rootfs.GetType())
 	}
 
-	vmid, err := models.NewVMID("hypercore", "", uuid.NewString())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create new VMID: %w", err)
-	}
-
 	spec, err := parseOpts(req.GetOptions())
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse options: %w", err)
@@ -249,7 +245,7 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 	}
 
 	hypervisorState.vm = &models.MicroVM{
-		ID:   *vmid,
+		ID:   uuid.NewString(),
 		Spec: spec,
 	}
 
@@ -496,7 +492,7 @@ func Run() {
 		func(ctx context.Context, id string, remotePublisher shim.Publisher, shimCancel func()) (shim.Shim, error) {
 			hyperShim := &HyperShim{
 				id:              id,
-				stateRoot:       "/tmp",
+				stateRoot:       defaults.StateRootDir + "/shim",
 				shimCtx:         ctx,
 				remotePublisher: remotePublisher,
 				eventExchange:   exchange.NewExchange(),

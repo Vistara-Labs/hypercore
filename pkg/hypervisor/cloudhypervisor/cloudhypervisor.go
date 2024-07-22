@@ -55,7 +55,7 @@ func (c *Service) Start(_ context.Context, vm *models.MicroVM, completionFn func
 
 	// We will have only one interface, i.e. the TAP device
 	status := &models.NetworkInterfaceStatus{}
-	nface := network.NewNetworkInterface(&vm.ID, &models.NetworkInterface{
+	nface := network.NewNetworkInterface(&models.NetworkInterface{
 		GuestMAC:   vm.Spec.GuestMAC,
 		BridgeName: vm.Spec.HostNetDev,
 	}, status)

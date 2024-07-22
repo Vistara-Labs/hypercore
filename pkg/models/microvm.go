@@ -1,7 +1,7 @@
 package models
 
 type MicroVM struct {
-	ID   VMID        `json:"id"`
+	ID   string      `json:"id"`
 	Spec MicroVMSpec `json:"spec"`
 }
 

@@ -57,7 +57,7 @@ func (f *Service) Start(_ context.Context, vm *models.MicroVM, completionFn func
 	status := &models.NetworkInterfaceStatus{}
 
 	// We will have only one interface, i.e. the TAP device
-	nface := network.NewNetworkInterface(&vm.ID, &models.NetworkInterface{
+	nface := network.NewNetworkInterface(&models.NetworkInterface{
 		GuestMAC:   vm.Spec.GuestMAC,
 		BridgeName: vm.Spec.HostNetDev,
 	}, status)
@@ -89,7 +89,7 @@ func (f *Service) Start(_ context.Context, vm *models.MicroVM, completionFn func
 		return fmt.Errorf("saving firecracker metadata %w", err)
 	}
 
-	args := []string{"--id", vm.ID.UID(), "--boot-timer", "--no-api"}
+	args := []string{"--boot-timer", "--no-api"}
 	args = append(args, "--config-file", vmState.ConfigPath())
 	args = append(args, "--metadata", vmState.MetadataPath())
 

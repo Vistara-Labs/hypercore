@@ -7,19 +7,17 @@ import (
 	"vistara-node/pkg/ports"
 )
 
-func NewNetworkInterface(vmid *models.VMID,
+func NewNetworkInterface(
 	iface *models.NetworkInterface,
 	status *models.NetworkInterfaceStatus,
 ) *CreateInterface {
 	return &CreateInterface{
-		vmid:   vmid,
 		iface:  iface,
 		status: status,
 	}
 }
 
 type CreateInterface struct {
-	vmid   *models.VMID
 	iface  *models.NetworkInterface
 	status *models.NetworkInterfaceStatus
 }

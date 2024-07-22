@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"vistara-node/pkg/containerd"
+	"vistara-node/pkg/defaults"
 
 	"github.com/spf13/cobra"
 
@@ -37,8 +38,7 @@ type HacConfig struct {
 func containerdConfig(cfg *Config) *containerd.Config {
 	return &containerd.Config{
 		SocketPath:         cfg.CtrSocketPath,
-		Namespace:          cfg.CtrNamespace,
-		ContainerNamespace: cfg.CtrNamespace + "-container",
+		ContainerNamespace: cfg.CtrNamespace,
 	}
 }
 
@@ -171,7 +171,7 @@ func SpawnCommand(cfg *Config) *cobra.Command {
 							RootfsPath: hacConfig.Hardware.Drive,
 						},
 					},
-					CioCreator: cio.NewCreator(cio.WithStreams(&bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{})),
+					CioCreator: cio.NewCreator(cio.WithFIFODir(defaults.StateRootDir+"/fifo"), cio.WithStreams(&bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{})),
 				})
 			case "docker":
 				client, err := NewDockerClient()
