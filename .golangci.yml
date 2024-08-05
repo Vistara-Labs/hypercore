@@ -1,0 +1,30 @@
+run:
+  go: '1.22'
+  timeout: 5m
+  tests: false
+  allow-parallel-runners: true
+linters:
+  enable-all: true
+  disable:
+    - cyclop
+    - contextcheck
+    - mnd
+    - ireturn
+    - gomnd
+    - err113
+    - funlen
+    - gci
+    - godox
+    - godot
+    - gofumpt
+    - gosec
+    - lll
+    - depguard
+    - nonamedreturns
+    - perfsprint
+    - forcetypeassert
+    - exhaustruct
+    - tagliatelle
+    - varnamelen
+    - wsl
+    - wrapcheck

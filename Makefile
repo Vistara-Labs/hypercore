@@ -1,51 +1,22 @@
-projectname?=vistara-node
-
-default: help
-
-.PHONY: help
-help: ## list makefile targets
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+BIN_DIR := bin
 
 .PHONY: build
-build: ## build golang binary
-	@go build -ldflags "-X main.version=$(shell git describe --abbrev=0 --tags)" -o $(projectname)
+build:
+	CGO_ENABLED=0 go build -ldflags "-X main.version=$(shell git describe --abbrev=0 --tags)" -o $(BIN_DIR)/containerd-shim-hypercore-example ./cmd
+	ln -sf containerd-shim-hypercore-example $(BIN_DIR)/hypercore
 
-.PHONY: install
-install: ## install golang binary
-	@go install -ldflags "-X main.version=$(shell git describe --abbrev=0 --tags)"
+.PHONY: clean
+clean:
+	rm -rf $(BIN_DIR)
 
-.PHONY: run
-run: ## run the app
-	@go run -ldflags "-X main.version=$(shell git describe --abbrev=0 --tags)"  main.go
+.PHONY: fmt
+fmt:
+	go fmt ./...
 
-.PHONY: bootstrap
-bootstrap: ## install build deps
-	go generate -tags tools tools/tools.go
+.PHONY: lint
+lint:
+	golangci-lint run
 
-PHONY: test
-test: clean ## display test coverage
-	go test --cover -parallel=1 -v -coverprofile=coverage.out ./...
-	go tool cover -func=coverage.out | sort -rnk3
-	
-PHONY: clean
-clean: ## clean up environment
-	@rm -rf coverage.out dist/ $(projectname)
-
-PHONY: cover
-cover: ## display test coverage
-	go test -v -race $(shell go list ./... | grep -v /vendor/) -v -coverprofile=coverage.out
-	go tool cover -func=coverage.out
-
-PHONY: fmt
-fmt: ## format go files
-	gofumpt -w .
-	gci write .
-
-PHONY: lint
-lint: ## lint go files
-	golangci-lint run -c .golang-ci.yml
-
-.PHONY: pre-commit
-pre-commit:	## run pre-commit hooks
-	pre-commit run --all-files
-
+.PHONY: lint-fix
+lint-fix:
+	golangci-lint run --fix

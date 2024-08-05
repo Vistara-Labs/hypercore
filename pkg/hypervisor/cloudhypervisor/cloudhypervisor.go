@@ -5,17 +5,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/hashicorp/go-multierror"
 	"os"
 	"os/exec"
 	"vistara-node/pkg/defaults"
-	"vistara-node/pkg/hypervisor/shared"
-	"vistara-node/pkg/log"
 	"vistara-node/pkg/models"
 	"vistara-node/pkg/network"
 	"vistara-node/pkg/ports"
 
-	"github.com/sirupsen/logrus"
+	"github.com/hashicorp/go-multierror"
+
 	"github.com/spf13/afero"
 )
 
@@ -31,28 +29,20 @@ type Config struct {
 	StateRoot string
 }
 
-type CloudHypervisorService struct {
+type Service struct {
 	config *Config
 
-	networkSvc ports.NetworkService
-	fs         afero.Fs
+	fs afero.Fs
 }
 
-func New(cfg *Config, networkSvc ports.NetworkService, fs afero.Fs) ports.MicroVMService {
-	return &CloudHypervisorService{
-		config:     cfg,
-		networkSvc: networkSvc,
-		fs:         fs,
+func New(cfg *Config, fs afero.Fs) ports.MicroVMService {
+	return &Service{
+		config: cfg,
+		fs:     fs,
 	}
 }
 
-func (c *CloudHypervisorService) Start(ctx context.Context, vm *models.MicroVM, completionFn func(error)) (retErr error) {
-	logger := log.GetLogger(ctx).WithFields(logrus.Fields{
-		"service": "cloudhypervisor_microvm",
-		"vmid":    vm.ID.String(),
-	})
-	logger.Debugf("creating microvm inside cloudhypervisor start")
-
+func (c *Service) Start(_ context.Context, vm *models.MicroVM, completionFn func(error)) (retErr error) {
 	if vm.Spec.Kernel == "" || vm.Spec.RootfsPath == "" || vm.Spec.HostNetDev == "" || vm.Spec.GuestMAC == "" || vm.Spec.ImagePath == "" {
 		return errors.New("missing fields from model")
 	}
@@ -65,18 +55,17 @@ func (c *CloudHypervisorService) Start(ctx context.Context, vm *models.MicroVM, 
 
 	// We will have only one interface, i.e. the TAP device
 	status := &models.NetworkInterfaceStatus{}
-	nface := network.NewNetworkInterface(&vm.ID, &models.NetworkInterface{
+	nface := network.NewNetworkInterface(&models.NetworkInterface{
 		GuestMAC:   vm.Spec.GuestMAC,
-		Type:       models.IfaceTypeTap,
 		BridgeName: vm.Spec.HostNetDev,
-	}, status, c.networkSvc)
-	if err := nface.Create(ctx); err != nil {
+	}, status)
+	if err := nface.Create(); err != nil {
 		return fmt.Errorf("creating network interface %w", err)
 	}
 
 	defer func() {
 		if retErr != nil {
-			if err := c.networkSvc.IfaceDelete(ctx, ports.DeleteIfaceInput{
+			if err := network.IfaceDelete(ports.DeleteIfaceInput{
 				DeviceName: status.HostDeviceName,
 			}); err != nil {
 				retErr = multierror.Append(retErr, err)
@@ -101,9 +90,9 @@ func (c *CloudHypervisorService) Start(ctx context.Context, vm *models.MicroVM, 
 	return nil
 }
 
-func (c *CloudHypervisorService) startMicroVM(vm *models.MicroVM, vmState *State, status *models.NetworkInterfaceStatus, completionFn func(error)) (*os.Process, error) {
+func (c *Service) startMicroVM(vm *models.MicroVM, vmState *State, status *models.NetworkInterfaceStatus, completionFn func(error)) (*os.Process, error) {
 	kernelCmdLine := DefaultKernelCmdLine()
-	kernelCmdLine.Set("ip", fmt.Sprintf("%s::%s:%s::eth0::off", status.TapDetails.VmIp.To4(), status.TapDetails.TapIp.To4(), status.TapDetails.Mask.To4()))
+	kernelCmdLine.Set("ip", fmt.Sprintf("%s::%s:%s::eth0::%s", status.TapDetails.VMIP.To4(), status.TapDetails.TapIP.To4(), status.TapDetails.Mask.To4(), "1.1.1.1"))
 
 	args := []string{
 		"--log-file",
@@ -121,7 +110,7 @@ func (c *CloudHypervisorService) startMicroVM(vm *models.MicroVM, vmState *State
 		"--net", fmt.Sprintf("tap=%s,mac=%s,ip=%s,mask=%s",
 			status.HostDeviceName,
 			status.MACAddress,
-			status.TapDetails.TapIp.To4(),
+			status.TapDetails.TapIP.To4(),
 			status.TapDetails.Mask.To4()),
 	}
 
@@ -151,7 +140,7 @@ func (c *CloudHypervisorService) startMicroVM(vm *models.MicroVM, vmState *State
 	return cmd.Process, nil
 }
 
-func (c *CloudHypervisorService) ensureState(vmState *State) error {
+func (c *Service) ensureState(vmState *State) error {
 	if err := c.fs.MkdirAll(vmState.Root(), defaults.DataDirPerm); err != nil {
 		return fmt.Errorf("creating state directory %s: %w", vmState.Root(), err)
 	}
@@ -166,7 +155,7 @@ func (c *CloudHypervisorService) ensureState(vmState *State) error {
 	return nil
 }
 
-func (c *CloudHypervisorService) Stop(ctx context.Context, vm *models.MicroVM) error {
+func (c *Service) Stop(_ context.Context, vm *models.MicroVM) error {
 	vmState := NewState(vm.ID, c.config.StateRoot, c.fs)
 
 	pid, err := vmState.PID()
@@ -184,7 +173,7 @@ func (c *CloudHypervisorService) Stop(ctx context.Context, vm *models.MicroVM) e
 	state, err := vmState.RuntimeState()
 	if err != nil {
 		retErr = multierror.Append(retErr, err)
-	} else if err = c.networkSvc.IfaceDelete(context.Background(), ports.DeleteIfaceInput{
+	} else if err = network.IfaceDelete(ports.DeleteIfaceInput{
 		DeviceName: state.HostIface,
 	}); err != nil {
 		retErr = multierror.Append(retErr, err)
@@ -197,21 +186,10 @@ func (c *CloudHypervisorService) Stop(ctx context.Context, vm *models.MicroVM) e
 	return retErr
 }
 
-func (c *CloudHypervisorService) Pid(ctx context.Context, vm *models.MicroVM) (int, error) {
+func (c *Service) Pid(_ context.Context, vm *models.MicroVM) (int, error) {
 	return NewState(vm.ID, c.config.StateRoot, c.fs).PID()
 }
 
-func (c *CloudHypervisorService) VSockPath(vm *models.MicroVM) string {
+func (c *Service) VSockPath(vm *models.MicroVM) string {
 	return NewState(vm.ID, c.config.StateRoot, c.fs).VSockPath()
-}
-
-func (c *CloudHypervisorService) State(ctx context.Context, id string) (ports.MicroVMState, error) {
-	// Implement Firecracker status check logic
-	return ports.MicroVMStateRunning, nil
-}
-
-func (c *CloudHypervisorService) Metrics(ctx context.Context, id models.VMID) (ports.MachineMetrics, error) {
-	// Implement Firecracker status check logic
-	machineMetrics := shared.MachineMetrics{}
-	return machineMetrics, nil
 }

@@ -8,7 +8,7 @@ CONTAINERD_ROOT="$HYPERCORE_BASE/containerd"
 CONTAINERD_SOCK="$HYPERCORE_BASE/containerd.sock"
 
 # State is ephemeral
-CONTAINERD_STATE="/tmp/hypercore-containerd"
+CONTAINERD_STATE="/run/hypercore/containerd"
 
 SNAPSHOTTER_ROOT="$HYPERCORE_BASE/snapshotter"
 SNAPSHOTTER_SCRATCH="$HYPERCORE_BASE/blockfile"

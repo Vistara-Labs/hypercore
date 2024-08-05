@@ -3,8 +3,11 @@ package containerd
 import (
 	"context"
 	"fmt"
+	"strings"
 	"syscall"
-	"vistara-node/pkg/log"
+	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/api/services/tasks/v1"
@@ -13,13 +16,9 @@ import (
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
 	"github.com/google/uuid"
+	"github.com/hashicorp/go-multierror"
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
-
-type RunningContainer struct {
-	ExitStatusChan <-chan containerd.ExitStatus
-	Task           containerd.Task
-}
 
 type CreateContainerOpts struct {
 	ImageRef    string
@@ -32,26 +31,24 @@ type CreateContainerOpts struct {
 	CioCreator cio.Creator
 }
 
-type containerdRepo struct {
-	client       *containerd.Client
-	config       *Config
-	containerMap map[string]RunningContainer
+type Repo struct {
+	client *containerd.Client
+	config *Config
 }
 
-func NewMicroVMRepository(cfg *Config) (*containerdRepo, error) {
+func NewMicroVMRepository(cfg *Config) (*Repo, error) {
 	client, err := containerd.New(cfg.SocketPath)
 	if err != nil {
 		return nil, fmt.Errorf("creating containerd client: %w", err)
 	}
 
-	return &containerdRepo{
-		client:       client,
-		config:       cfg,
-		containerMap: make(map[string]RunningContainer),
+	return &Repo{
+		client: client,
+		config: cfg,
 	}, nil
 }
 
-func (r *containerdRepo) Attach(ctx context.Context, containerID string) error {
+func (r *Repo) Attach(ctx context.Context, containerID string) error {
 	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
 
 	container, err := r.client.LoadContainer(namespaceCtx, containerID)
@@ -75,7 +72,7 @@ func (r *containerdRepo) Attach(ctx context.Context, containerID string) error {
 	return nil
 }
 
-func (r *containerdRepo) GetTasks(ctx context.Context) ([]*task.Process, error) {
+func (r *Repo) GetTasks(ctx context.Context) ([]*task.Process, error) {
 	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
 
 	resp, err := r.client.TaskService().List(namespaceCtx, &tasks.ListTasksRequest{})
@@ -83,10 +80,10 @@ func (r *containerdRepo) GetTasks(ctx context.Context) ([]*task.Process, error) 
 		return nil, err
 	}
 
-	return resp.Tasks, nil
+	return resp.GetTasks(), nil
 }
 
-func (r *containerdRepo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_ string, retErr error) {
+func (r *Repo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_ string, retErr error) {
 	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
 
 	image, err := r.client.Pull(namespaceCtx, opts.ImageRef)
@@ -109,11 +106,11 @@ func (r *containerdRepo) CreateContainer(ctx context.Context, opts CreateContain
 	// when this request completes
 	namespaceCtx = namespaces.WithNamespace(context.Background(), r.config.ContainerNamespace)
 
-	containerId := uuid.NewString()
+	containerID := uuid.NewString()
 
 	container, err := r.client.NewContainer(
 		namespaceCtx,
-		containerId,
+		containerID,
 		containerd.WithImage(image),
 		containerd.WithSnapshotter(opts.Snapshotter),
 		containerd.WithNewSnapshot(uuid.NewString(), image),
@@ -128,67 +125,90 @@ func (r *containerdRepo) CreateContainer(ctx context.Context, opts CreateContain
 		),
 	)
 	if err != nil {
-		return "", fmt.Errorf("failed to create new container %s: %w", containerId, err)
+		return "", fmt.Errorf("failed to create new container %s: %w", containerID, err)
 	}
 
 	defer func() {
 		if retErr != nil {
-			container.Delete(namespaceCtx, containerd.WithSnapshotCleanup)
+			if err := container.Delete(namespaceCtx, containerd.WithSnapshotCleanup); err != nil {
+				retErr = multierror.Append(retErr, err)
+			}
 		}
 	}()
 
 	task, err := container.NewTask(namespaceCtx, opts.CioCreator)
 	if err != nil {
-		return "", fmt.Errorf("failed to start task for container %s: %w", containerId, err)
+		return "", fmt.Errorf("failed to start task for container %s: %w", containerID, err)
 	}
 
 	defer func() {
 		if retErr != nil {
-			task.Delete(namespaceCtx)
+			if _, err := task.Delete(namespaceCtx); err != nil {
+				retErr = multierror.Append(retErr, err)
+			}
 		}
 	}()
 
-	exitStatusChan, err := task.Wait(namespaceCtx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get exit status chan for container %s task: %w", containerId, err)
-	}
-
 	err = task.Start(namespaceCtx)
 	if err != nil {
-		return "", fmt.Errorf("failed to start task for container %s: %w", containerId, err)
+		return "", fmt.Errorf("failed to start task for container %s: %w", containerID, err)
 	}
 
-	r.containerMap[containerId] = RunningContainer{
-		ExitStatusChan: exitStatusChan,
-		Task:           task,
-	}
-
-	return containerId, nil
+	return containerID, nil
 }
 
-func (r *containerdRepo) DeleteContainer(ctx context.Context, containerId string) (uint32, error) {
+func (r *Repo) DeleteContainer(ctx context.Context, containerID string) (uint32, error) {
 	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
 
-	container, exists := r.containerMap[containerId]
-	if !exists {
-		return 0, fmt.Errorf("container %s not found", containerId)
-	}
-
-	err := container.Task.Kill(namespaceCtx, syscall.SIGTERM)
+	container, err := r.client.LoadContainer(namespaceCtx, containerID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to kill task: %w", err)
+		return 0, fmt.Errorf("failed to load container %s: %w", containerID, err)
 	}
 
-	delete(r.containerMap, containerId)
+	task, err := container.Task(namespaceCtx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get task: %w", err)
+	}
 
-	status := <-container.ExitStatusChan
+	statusC, err := task.Wait(namespaceCtx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get exit status chan for container %s task: %w", containerID, err)
+	}
 
-	code, _, err := status.Result()
+	// If the task was not found, we can just stop the container
+	if err := task.Kill(namespaceCtx, syscall.SIGTERM); err != nil {
+		// TODO use github.com/containerd/errdefs
+		if !strings.Contains(err.Error(), "not found") {
+			return 0, fmt.Errorf("failed to kill task: %w", err)
+		}
+	}
+
+	var code uint32
+
+	select {
+	case status := <-statusC:
+		code, _, err = status.Result()
+	case <-time.After(time.Second * 5):
+		if err := task.Kill(namespaceCtx, syscall.SIGKILL); err != nil {
+			return 0, fmt.Errorf("failed to kill task: %w", err)
+		}
+
+		code, _, err = (<-statusC).Result()
+	}
+
 	if err != nil {
 		return 0, fmt.Errorf("failed to get exit status: %w", err)
 	}
 
-	log.GetLogger(ctx).Infof("container %s exited with status %d", containerId, code)
+	log.WithContext(ctx).Infof("container %s exited with status %d", containerID, code)
+
+	if _, err := task.Delete(namespaceCtx); err != nil {
+		return 0, fmt.Errorf("failed to delete task: %w", err)
+	}
+
+	if err := container.Delete(namespaceCtx, containerd.WithSnapshotCleanup); err != nil {
+		return 0, fmt.Errorf("failed to delete container %s: %w", containerID, err)
+	}
 
 	return code, nil
 }

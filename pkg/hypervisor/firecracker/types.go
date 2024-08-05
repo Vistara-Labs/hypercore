@@ -49,15 +49,6 @@ const (
 	CacheTypeWriteBack CacheType = "WriteBack"
 )
 
-type FileEngineType string
-
-const (
-	// FileEngineTypeSync specifies using a synchronous engine based on blocking system calls.
-	FileEngineTypeSync = FileEngineType("Sync")
-	// FileEngineTypeAsync specifies using a asynchronous engine based on io_uring.
-	FileEngineTypeAsync = FileEngineType("Async")
-)
-
 // BlockDeviceConfig contains the configuration for a microvm block device.
 type BlockDeviceConfig struct {
 	// ID is the unique identifier of the drive.
@@ -109,10 +100,7 @@ type NetworkInterfaceConfig struct {
 type LogLevel string
 
 const (
-	LogLevelError   LogLevel = "Error"
-	LogLevelWarning LogLevel = "Warning"
-	LogLevelInfo    LogLevel = "Info"
-	LogLevelDebug   LogLevel = "Debug"
+	LogLevelDebug LogLevel = "Debug"
 )
 
 // LoggerConfig holds the configuration for the logger.
@@ -147,7 +135,6 @@ type MMDSVersion string
 
 const (
 	MMDSVersion1 = MMDSVersion("V1")
-	MMDSVersion2 = MMDSVersion("V2")
 )
 
 // MMDSConfig is the config related to the mmds.
@@ -173,15 +160,3 @@ type VsockDeviceConfig struct {
 type Metadata struct {
 	Latest map[string]string `json:"latest"`
 }
-
-// InstanceState is a type that represents the running state of a Firecracker instance.
-type InstanceState string
-
-const (
-	// InstanceStateNotStarted the instance hasn't started running yet.
-	InstanceStateNotStarted InstanceState = "Not started"
-	// InstanceStateRunning the instance is running.
-	InstanceStateRunning InstanceState = "Running"
-	// InstanceStatePaused the instance is currently paused.
-	InstanceStatePaused InstanceState = "Paused"
-)

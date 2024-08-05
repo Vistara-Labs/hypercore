@@ -8,7 +8,6 @@ import (
 	"os"
 	"vistara-node/pkg/defaults"
 	"vistara-node/pkg/hypervisor/shared"
-	"vistara-node/pkg/models"
 
 	"github.com/spf13/afero"
 )
@@ -18,9 +17,9 @@ type State struct {
 	fs        afero.Fs
 }
 
-func NewState(vmid models.VMID, stateDir string, fs afero.Fs) *State {
+func NewState(vmid, stateDir string, fs afero.Fs) *State {
 	return &State{
-		stateRoot: fmt.Sprintf("%s/%s", stateDir, vmid.String()),
+		stateRoot: fmt.Sprintf("%s/%s", stateDir, vmid),
 		fs:        fs,
 	}
 }
