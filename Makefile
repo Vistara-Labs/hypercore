@@ -2,7 +2,7 @@ BIN_DIR := bin
 
 .PHONY: build
 build:
-	CGO_ENABLED=0 go build -ldflags "-X main.version=$(shell git describe --abbrev=0 --tags)" -o $(BIN_DIR)/containerd-shim-hypercore-example ./cmd
+	CGO_ENABLED=0 go build -ldflags "-X main.version=$(shell git describe --abbrev=0 --tags)" -o $(BIN_DIR)/containerd-shim-hypercore-example ./cmd/containerd-shim-hypercore-example
 	ln -sf containerd-shim-hypercore-example $(BIN_DIR)/hypercore
 
 .PHONY: clean
