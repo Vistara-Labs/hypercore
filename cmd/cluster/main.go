@@ -1,53 +1,13 @@
-package main
+package cluster
 
 import (
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/hashicorp/serf/serf"
+	"net"
 	"os"
 	"strconv"
+	"sync"
+	"vistara-node/pkg/cluster"
 )
-
-type Agent struct {
-	closeCh chan struct{}
-	eventCh chan serf.Event
-	cfg     *serf.Config
-	serf    *serf.Serf
-}
-
-func NewAgent(port int) (*Agent, error) {
-	eventCh := make(chan serf.Event, 64)
-
-	cfg := serf.DefaultConfig()
-	cfg.EventCh = eventCh
-	cfg.NodeName = uuid.NewString()
-	cfg.MemberlistConfig.BindPort = port
-	cfg.MemberlistConfig.AdvertisePort = port
-	cfg.Init()
-
-	serf, err := serf.Create(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	agent := &Agent{
-		closeCh: make(chan struct{}),
-		eventCh: eventCh,
-		cfg:     cfg,
-		serf:    serf,
-	}
-
-	return agent, nil
-}
-
-func (a *Agent) EventsCh() <-chan serf.Event {
-	return a.eventCh
-}
-
-func (a *Agent) Join(port int) error {
-	_, err := a.serf.Join([]string{fmt.Sprintf("%s:%d", "0.0.0.0", port)}, true)
-	return err
-}
 
 func main() {
 	// 7946
@@ -56,7 +16,7 @@ func main() {
 		panic(err)
 	}
 
-	agent, err := NewAgent(port)
+	agent, err := cluster.NewAgent(port)
 	if err != nil {
 		panic(err)
 	}
@@ -70,21 +30,28 @@ func main() {
 		if err := agent.Join(clusterPort); err != nil {
 			panic(err)
 		}
-
-		for event := range agent.EventsCh() {
-			fmt.Println("Received event", event)
-		}
-	} else {
-		for event := range agent.EventsCh() {
-			fmt.Println("Received event", event)
-			query, err := agent.serf.Query("test", []byte{}, agent.serf.DefaultQueryParams())
-			if err != nil {
-				panic(err)
-			}
-
-			for resp := range query.ResponseCh() {
-				fmt.Println("Response", resp)
-			}
-		}
 	}
+
+	grpcServer := cluster.NewServer()
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", 6666))
+	if err != nil {
+		panic(err)
+	}
+
+	quitWg := sync.WaitGroup{}
+	quitWg.Add(2)
+
+	go func() {
+		defer quitWg.Done()
+		if err := grpcServer.Serve(listener); err != nil {
+			panic(err)
+		}
+	}()
+
+	go func() {
+		defer quitWg.Done()
+		agent.Handler()
+	}()
+
+	quitWg.Wait()
 }

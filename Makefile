@@ -2,7 +2,7 @@ BIN_DIR := bin
 
 .PHONY: proto-gen
 proto-gen:
-	protoc --proto_path=. --go_out=. pkg/proto/*.proto
+	protoc --proto_path=. --go_out=. --go-grpc_out=. pkg/proto/*.proto
 
 .PHONY: build
 build:
