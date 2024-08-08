@@ -19,6 +19,7 @@ require (
 	github.com/opencontainers/runtime-spec v1.2.0
 	github.com/spf13/viper v1.19.0
 	github.com/vistara-labs/firecracker-containerd v0.0.0-20240707190021-1287a7cb7490
+	google.golang.org/grpc v1.65.0
 	google.golang.org/protobuf v1.34.2
 )
 
@@ -114,7 +115,6 @@ require (
 	golang.org/x/tools v0.23.0 // indirect
 	google.golang.org/genproto v0.0.0-20240711142825-46eb208f015d // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240711142825-46eb208f015d // indirect
-	google.golang.org/grpc v1.65.0 // indirect
 	honnef.co/go/tools v0.4.7 // indirect
 )
 
