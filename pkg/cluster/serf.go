@@ -1,13 +1,16 @@
 package cluster
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"github.com/containerd/containerd/cio"
 	"github.com/google/uuid"
 	"github.com/hashicorp/serf/serf"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
+	"vistara-node/pkg/containerd"
 	pb "vistara-node/pkg/proto/cluster"
 )
 
@@ -18,12 +21,13 @@ var (
 
 type Agent struct {
 	eventCh chan serf.Event
+	ctrRepo *containerd.Repo
 	cfg     *serf.Config
 	serf    *serf.Serf
 	logger  *log.Logger
 }
 
-func NewAgent(port int, logger *log.Logger) (*Agent, error) {
+func NewAgent(port int, repo *containerd.Repo, logger *log.Logger) (*Agent, error) {
 	eventCh := make(chan serf.Event, 64)
 
 	cfg := serf.DefaultConfig()
@@ -43,6 +47,7 @@ func NewAgent(port int, logger *log.Logger) (*Agent, error) {
 		cfg:     cfg,
 		serf:    serf,
 		logger:  logger,
+		ctrRepo: repo,
 	}
 
 	return agent, nil
@@ -62,16 +67,47 @@ func (a *Agent) Handler() {
 
 			switch query.Name {
 			case SpawnQuery:
-				// TODO parse query
 				payload, err := proto.Marshal(&pb.VmSpawnResponse{})
 				if err != nil {
 					a.logger.WithError(err).Error("failed to marshal payload")
+					continue
 				}
 
 				if err := query.Respond(payload); err != nil {
 					a.logger.WithError(err).Error("failed to respond to query")
 				}
 			case SpawnAttempt:
+				// Attempt to spawn the VM
+				var payload pb.VmSpawnRequest
+				if err := proto.Unmarshal(query.Payload, &payload); err != nil {
+					a.logger.WithError(err).Error("failed to unmarshal payload")
+					continue
+				}
+
+				id, err := a.ctrRepo.CreateContainer(context.Background(), containerd.CreateContainerOpts{
+					ImageRef:    payload.GetImageRef(),
+					Snapshotter: "",
+					Runtime: struct {
+						Name    string
+						Options interface{}
+					}{
+						Name: "io.containerd.runc.v2",
+					},
+					CioCreator: cio.NewCreator(cio.WithStdio),
+				})
+				if err != nil {
+					a.logger.WithError(err).Error("failed to create container")
+					continue
+				}
+
+				resp, err := proto.Marshal(&pb.VmSpawnResponse{Id: id})
+				if err != nil {
+					a.logger.WithError(err).Error("failed to marshal payload")
+					continue
+				}
+				if err := query.Respond(resp); err != nil {
+					a.logger.WithError(err).Error("failed to respond to query")
+				}
 			}
 		}
 	}
@@ -98,13 +134,20 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) error {
 	}
 
 	for response := range query.ResponseCh() {
-		var payload pb.ClusterMessage
-		if err := proto.Unmarshal(response.Payload, &payload); err != nil {
-			a.logger.WithError(err).Error("failed to unmarshal payload")
-			continue
+		a.logger.Infof("Successful response from node: %s", response.From)
+
+		params := a.serf.DefaultQueryParams()
+		params.FilterNodes = []string{response.From}
+
+		query, err = a.serf.Query(SpawnAttempt, payload, params)
+		if err != nil {
+			return err
 		}
 
-		a.logger.Infof("Successful response from node: %s", response.From)
+		for response := range query.ResponseCh() {
+			a.logger.Infof("Successfully spawned VM on node: %s", response.From)
+			return nil
+		}
 	}
 
 	return errors.New("no response received from nodes")
