@@ -55,11 +55,9 @@ func NewAgent(port int, repo *containerd.Repo, logger *log.Logger) (*Agent, erro
 
 func (a *Agent) Handler() {
 	for event := range a.eventCh {
-		a.logger.Infof("Received event: %v", event)
-
 		switch event.EventType() {
 		case serf.EventMemberJoin:
-			join := event.(*serf.MemberEvent)
+			join := event.(serf.MemberEvent)
 			a.logger.Infof("Join event: %v", join)
 		case serf.EventQuery:
 			query := event.(*serf.Query)
@@ -109,15 +107,17 @@ func (a *Agent) Handler() {
 					a.logger.WithError(err).Error("failed to respond to query")
 				}
 			}
+		default:
+			a.logger.Infof("Received event: %v", event)
 		}
 	}
 }
 
 // Request another node to spawn a VM
-func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) error {
+func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error) {
 	var anyPayload anypb.Any
 	if err := anypb.MarshalFrom(&anyPayload, req, proto.MarshalOptions{}); err != nil {
-		return err
+		return nil, err
 	}
 
 	payload, err := proto.Marshal(&pb.ClusterMessage{
@@ -125,12 +125,12 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) error {
 		WrappedMessage: &anyPayload,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	query, err := a.serf.Query(SpawnQuery, payload, a.serf.DefaultQueryParams())
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	for response := range query.ResponseCh() {
@@ -141,16 +141,21 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) error {
 
 		query, err = a.serf.Query(SpawnAttempt, payload, params)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		for response := range query.ResponseCh() {
 			a.logger.Infof("Successfully spawned VM on node: %s", response.From)
-			return nil
+
+			var resp pb.VmSpawnResponse
+			if err := proto.Unmarshal(response.Payload, &resp); err != nil {
+				return nil, err
+			}
+			return &resp, nil
 		}
 	}
 
-	return errors.New("no response received from nodes")
+	return nil, errors.New("no response received from nodes")
 }
 
 func (a *Agent) Join(port int) error {

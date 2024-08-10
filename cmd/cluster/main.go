@@ -1,28 +1,47 @@
-package cluster
+package main
 
 import (
 	"fmt"
+	log "github.com/sirupsen/logrus"
+	"google.golang.org/grpc/reflection"
 	"net"
 	"os"
 	"strconv"
 	"sync"
 	"vistara-node/pkg/cluster"
+	"vistara-node/pkg/containerd"
+	"vistara-node/pkg/defaults"
 )
 
 func main() {
+	logger := log.New()
+
+	grpcPort, err := strconv.Atoi(os.Args[1])
+	if err != nil {
+		panic(err)
+	}
+
 	// 7946
-	port, err := strconv.Atoi(os.Args[1])
+	port, err := strconv.Atoi(os.Args[2])
 	if err != nil {
 		panic(err)
 	}
 
-	agent, err := cluster.NewAgent(port)
+	repo, err := containerd.NewMicroVMRepository(&containerd.Config{
+		SocketPath:         defaults.ContainerdSocket,
+		ContainerNamespace: defaults.ContainerdNamespace,
+	})
 	if err != nil {
 		panic(err)
 	}
 
-	if len(os.Args) > 2 {
-		clusterPort, err := strconv.Atoi(os.Args[2])
+	agent, err := cluster.NewAgent(port, repo, logger)
+	if err != nil {
+		panic(err)
+	}
+
+	if len(os.Args) > 3 {
+		clusterPort, err := strconv.Atoi(os.Args[3])
 		if err != nil {
 			panic(err)
 		}
@@ -32,8 +51,9 @@ func main() {
 		}
 	}
 
-	grpcServer := cluster.NewServer()
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", 6666))
+	grpcServer := cluster.NewServer(logger, agent)
+	reflection.Register(grpcServer)
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
 	if err != nil {
 		panic(err)
 	}
