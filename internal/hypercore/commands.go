@@ -2,8 +2,11 @@ package hypercore
 
 import (
 	"bytes"
+	"net"
 	"os"
 	"path/filepath"
+	"sync"
+	"vistara-node/pkg/cluster"
 
 	"vistara-node/pkg/containerd"
 	"vistara-node/pkg/defaults"
@@ -63,6 +66,66 @@ func AttachCommand(cfg *Config) *cobra.Command {
 	}
 
 	AddCommonFlags(cmd, cfg)
+
+	return cmd
+}
+
+func ClusterCommand(cfg *Config) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "cluster",
+		Short: "join a hypercore cluster",
+		Args:  cobra.MaximumNArgs(1),
+		PreRunE: func(c *cobra.Command, _ []string) error {
+			BindCommandToViper(c)
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			logger := log.New()
+
+			repo, err := containerd.NewMicroVMRepository(containerdConfig(cfg))
+			if err != nil {
+				return err
+			}
+
+			agent, err := cluster.NewAgent(cfg.ClusterBindAddr, repo, logger)
+
+			if len(os.Args) > 2 {
+				if err := agent.Join(os.Args[2]); err != nil {
+					return err
+				}
+			}
+
+			grpcServer := cluster.NewServer(logger, agent)
+			grpcListener, err := net.Listen("tcp", cfg.GrpcBindAddr)
+			if err != nil {
+				return err
+			}
+
+			quitWg := sync.WaitGroup{}
+			quitWg.Add(2)
+
+			go func() {
+				defer quitWg.Done()
+				if err := grpcServer.Serve(grpcListener); err != nil {
+					panic(err)
+				}
+			}()
+
+			go func() {
+				defer quitWg.Done()
+				agent.Handler()
+			}()
+
+			quitWg.Wait()
+
+			return nil
+		},
+	}
+
+	// TODO remove hac/vmm flags
+	AddCommonFlags(cmd, cfg)
+	AddClusterFlags(cmd, cfg)
 
 	return cmd
 }

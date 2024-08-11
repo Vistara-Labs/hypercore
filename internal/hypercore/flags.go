@@ -15,6 +15,8 @@ const (
 	containerdSocketFlag = "containerd-socket"
 	containerdNamespace  = "containerd-ns"
 	vmProviderFlag       = "provider"
+	grpcBindAddrFlag     = "grpc-bind-addr"
+	clusterBindAddrFlag  = "cluster-bind-addr"
 )
 
 func AddCommonFlags(cmd *cobra.Command, cfg *Config) {
@@ -37,6 +39,11 @@ func AddCommonFlags(cmd *cobra.Command, cfg *Config) {
 		containerdNamespace,
 		defaults.ContainerdNamespace,
 		"The name of the containerd namespace to use.")
+}
+
+func AddClusterFlags(cmd *cobra.Command, cfg *Config) {
+	cmd.Flags().StringVar(&cfg.GrpcBindAddr, grpcBindAddrFlag, ":8000", "GRPC Server bind address")
+	cmd.Flags().StringVar(&cfg.ClusterBindAddr, clusterBindAddrFlag, ":7946", "Cluster bind address")
 }
 
 func BindCommandToViper(cmd *cobra.Command) {

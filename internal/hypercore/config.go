@@ -5,4 +5,6 @@ type Config struct {
 	CtrNamespace      string
 	DefaultVMProvider string
 	HACFile           string
+	ClusterBindAddr   string
+	GrpcBindAddr      string
 }

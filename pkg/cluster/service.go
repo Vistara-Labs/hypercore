@@ -2,9 +2,10 @@ package cluster
 
 import (
 	"context"
+	pb "vistara-node/pkg/proto/cluster"
+
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
-	pb "vistara-node/pkg/proto/cluster"
 )
 
 type server struct {

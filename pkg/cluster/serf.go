@@ -3,16 +3,18 @@ package cluster
 import (
 	"context"
 	"errors"
-	"fmt"
+	"net"
+	"strconv"
+	"time"
+	"vistara-node/pkg/containerd"
+	pb "vistara-node/pkg/proto/cluster"
+
 	"github.com/containerd/containerd/cio"
 	"github.com/google/uuid"
 	"github.com/hashicorp/serf/serf"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
-	"time"
-	"vistara-node/pkg/containerd"
-	pb "vistara-node/pkg/proto/cluster"
 )
 
 var (
@@ -27,14 +29,25 @@ type Agent struct {
 	logger  *log.Logger
 }
 
-func NewAgent(port int, repo *containerd.Repo, logger *log.Logger) (*Agent, error) {
+func NewAgent(bindAddr string, repo *containerd.Repo, logger *log.Logger) (*Agent, error) {
 	eventCh := make(chan serf.Event, 64)
+
+	addr, port, err := net.SplitHostPort(bindAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	bindPort, err := strconv.Atoi(port)
+	if err != nil {
+		return nil, err
+	}
 
 	cfg := serf.DefaultConfig()
 	cfg.EventCh = eventCh
 	cfg.NodeName = uuid.NewString()
-	cfg.MemberlistConfig.BindPort = port
-	cfg.MemberlistConfig.AdvertisePort = port
+	cfg.MemberlistConfig.BindAddr = addr
+	cfg.MemberlistConfig.BindPort = bindPort
+	cfg.MemberlistConfig.AdvertisePort = bindPort
 	cfg.Init()
 
 	serf, err := serf.Create(cfg)
@@ -74,15 +87,15 @@ func (a *Agent) Handler() {
 				continue
 			}
 
-			switch baseMessage.Event {
+			switch baseMessage.GetEvent() {
 			case pb.ClusterEvent_SPAWN:
 				var payload pb.VmSpawnRequest
-				if err := baseMessage.WrappedMessage.UnmarshalTo(&payload); err != nil {
+				if err := baseMessage.GetWrappedMessage().UnmarshalTo(&payload); err != nil {
 					a.logger.WithError(err).Error("failed to unmarshal payload")
 					continue
 				}
 
-				if payload.DryRun {
+				if payload.GetDryRun() {
 					response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{})
 					if err != nil {
 						a.logger.WithError(err).Error("failed to wrap cluster message")
@@ -122,7 +135,7 @@ func (a *Agent) Handler() {
 					a.logger.WithError(err).Error("failed to respond to query")
 				}
 			default:
-				a.logger.Errorf("got invalid event: %d", baseMessage.Event)
+				a.logger.Errorf("got invalid event: %d", baseMessage.GetEvent())
 			}
 		default:
 			a.logger.Infof("Received event: %v", event)
@@ -196,7 +209,7 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error
 			}
 
 			var wrappedResp pb.VmSpawnResponse
-			if err := resp.WrappedMessage.UnmarshalTo(&wrappedResp); err != nil {
+			if err := resp.GetWrappedMessage().UnmarshalTo(&wrappedResp); err != nil {
 				return nil, err
 			}
 
@@ -207,7 +220,7 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error
 	return nil, errors.New("no response received from nodes")
 }
 
-func (a *Agent) Join(port int) error {
-	_, err := a.serf.Join([]string{fmt.Sprintf("%s:%d", "0.0.0.0", port)}, true)
+func (a *Agent) Join(addr string) error {
+	_, err := a.serf.Join([]string{addr}, true)
 	return err
 }
