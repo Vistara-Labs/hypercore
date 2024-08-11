@@ -10,13 +10,13 @@ import (
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
+	"time"
 	"vistara-node/pkg/containerd"
 	pb "vistara-node/pkg/proto/cluster"
 )
 
 var (
-	SpawnQuery   = "spawn_query"
-	SpawnAttempt = "spawn_attempt"
+	QueryName = "hypercore_query"
 )
 
 type Agent struct {
@@ -63,22 +63,31 @@ func (a *Agent) Handler() {
 			query := event.(*serf.Query)
 			a.logger.Infof("Query event: %v", query)
 
-			switch query.Name {
-			case SpawnQuery:
-				payload, err := proto.Marshal(&pb.VmSpawnResponse{})
-				if err != nil {
-					a.logger.WithError(err).Error("failed to marshal payload")
+			var baseMessage pb.ClusterMessage
+			if err := proto.Unmarshal(query.Payload, &baseMessage); err != nil {
+				a.logger.WithError(err).Error("failed to unmarshal base payload")
+				continue
+			}
+
+			switch baseMessage.Event {
+			case pb.ClusterEvent_SPAWN:
+				var payload pb.VmSpawnRequest
+				if err := baseMessage.WrappedMessage.UnmarshalTo(&payload); err != nil {
+					a.logger.WithError(err).Error("failed to unmarshal payload")
 					continue
 				}
 
-				if err := query.Respond(payload); err != nil {
-					a.logger.WithError(err).Error("failed to respond to query")
-				}
-			case SpawnAttempt:
-				// Attempt to spawn the VM
-				var payload pb.VmSpawnRequest
-				if err := proto.Unmarshal(query.Payload, &payload); err != nil {
-					a.logger.WithError(err).Error("failed to unmarshal payload")
+				if payload.DryRun {
+					response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{})
+					if err != nil {
+						a.logger.WithError(err).Error("failed to wrap cluster message")
+						continue
+					}
+
+					if err := query.Respond(response); err != nil {
+						a.logger.WithError(err).Error("failed to respond to query")
+					}
+
 					continue
 				}
 
@@ -98,14 +107,17 @@ func (a *Agent) Handler() {
 					continue
 				}
 
-				resp, err := proto.Marshal(&pb.VmSpawnResponse{Id: id})
+				response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{Id: id})
 				if err != nil {
-					a.logger.WithError(err).Error("failed to marshal payload")
+					a.logger.WithError(err).Error("failed to wrap cluster message")
 					continue
 				}
-				if err := query.Respond(resp); err != nil {
+
+				if err := query.Respond(response); err != nil {
 					a.logger.WithError(err).Error("failed to respond to query")
 				}
+			default:
+				a.logger.Errorf("got invalid event: %d", baseMessage.Event)
 			}
 		default:
 			a.logger.Infof("Received event: %v", event)
@@ -113,22 +125,44 @@ func (a *Agent) Handler() {
 	}
 }
 
-// Request another node to spawn a VM
-func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error) {
+func wrapClusterMessage(event pb.ClusterEvent, message proto.Message) ([]byte, error) {
 	var anyPayload anypb.Any
-	if err := anypb.MarshalFrom(&anyPayload, req, proto.MarshalOptions{}); err != nil {
+	if err := anypb.MarshalFrom(&anyPayload, message, proto.MarshalOptions{}); err != nil {
 		return nil, err
 	}
 
 	payload, err := proto.Marshal(&pb.ClusterMessage{
-		Event:          pb.ClusterEvent_SPAWN,
+		Event:          event,
 		WrappedMessage: &anyPayload,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	query, err := a.serf.Query(SpawnQuery, payload, a.serf.DefaultQueryParams())
+	return payload, nil
+}
+
+func wrapClusterErrorMessage(errorMessage string) ([]byte, error) {
+	return wrapClusterMessage(pb.ClusterEvent_ERROR, &pb.ErrorResponse{
+		Error: errorMessage,
+	})
+}
+
+// Request another node to spawn a VM
+func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error) {
+	req.DryRun = true
+	payload, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, req)
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := a.serf.Query(QueryName, payload, a.serf.DefaultQueryParams())
+	if err != nil {
+		return nil, err
+	}
+
+	req.DryRun = false
+	payload, err = wrapClusterMessage(pb.ClusterEvent_SPAWN, req)
 	if err != nil {
 		return nil, err
 	}
@@ -137,9 +171,13 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error
 		a.logger.Infof("Successful response from node: %s", response.From)
 
 		params := a.serf.DefaultQueryParams()
+		// Give 30 seconds to the node to pull the image from the network
+		// and spawn the VM
+		params.Timeout = time.Second * 30
+		// Only send the query to the node that sent the response
 		params.FilterNodes = []string{response.From}
 
-		query, err = a.serf.Query(SpawnAttempt, payload, params)
+		query, err = a.serf.Query(QueryName, payload, params)
 		if err != nil {
 			return nil, err
 		}
@@ -147,11 +185,17 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error
 		for response := range query.ResponseCh() {
 			a.logger.Infof("Successfully spawned VM on node: %s", response.From)
 
-			var resp pb.VmSpawnResponse
+			var resp pb.ClusterMessage
 			if err := proto.Unmarshal(response.Payload, &resp); err != nil {
 				return nil, err
 			}
-			return &resp, nil
+
+			var wrappedResp pb.VmSpawnResponse
+			if err := resp.WrappedMessage.UnmarshalTo(&wrappedResp); err != nil {
+				return nil, err
+			}
+
+			return &wrappedResp, nil
 		}
 	}
 

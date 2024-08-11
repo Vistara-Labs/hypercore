@@ -28,6 +28,7 @@ message VmSpawnRequest {
     uint32 cores = 1;
     uint32 memory = 2;
     string image_ref = 3;
+    bool dry_run = 4;
 }
 
 message VmSpawnResponse {
