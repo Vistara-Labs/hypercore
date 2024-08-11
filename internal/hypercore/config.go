@@ -7,4 +7,9 @@ type Config struct {
 	HACFile           string
 	ClusterBindAddr   string
 	GrpcBindAddr      string
+	ClusterSpawn      struct {
+		CPU      int
+		Memory   int
+		ImageRef string
+	}
 }

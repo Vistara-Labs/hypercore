@@ -2,14 +2,18 @@ package hypercore
 
 import (
 	"bytes"
+	"context"
 	"net"
 	"os"
 	"path/filepath"
 	"sync"
 	"vistara-node/pkg/cluster"
 
+	"google.golang.org/grpc"
+
 	"vistara-node/pkg/containerd"
 	"vistara-node/pkg/defaults"
+	pb "vistara-node/pkg/proto/cluster"
 
 	"github.com/spf13/cobra"
 
@@ -19,6 +23,7 @@ import (
 	"github.com/containerd/typeurl/v2"
 	"github.com/google/uuid"
 	toml "github.com/pelletier/go-toml/v2"
+	"google.golang.org/grpc/credentials/insecure"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -66,6 +71,43 @@ func AttachCommand(cfg *Config) *cobra.Command {
 	}
 
 	AddCommonFlags(cmd, cfg)
+
+	return cmd
+}
+
+func ClusterSpawnCommand(cfg *Config) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "spawn",
+		Short: "spawn a VM in a cluster",
+		PreRunE: func(c *cobra.Command, _ []string) error {
+			BindCommandToViper(c)
+
+			return nil
+		},
+		RunE: func(_ *cobra.Command, _ []string) error {
+			conn, err := grpc.NewClient(cfg.GrpcBindAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			if err != nil {
+				return err
+			}
+			defer conn.Close()
+
+			c := pb.NewClusterServiceClient(conn)
+			resp, err := c.Spawn(context.Background(), &pb.VmSpawnRequest{
+				Cores:    uint32(cfg.ClusterSpawn.CPU),
+				Memory:   uint32(cfg.ClusterSpawn.Memory),
+				ImageRef: cfg.ClusterSpawn.ImageRef,
+			})
+			if err != nil {
+				return err
+			}
+
+			log.Infof("Got response: %v", resp)
+
+			return nil
+		},
+	}
+
+	AddClusterSpawnFlags(cmd, cfg)
 
 	return cmd
 }
@@ -125,6 +167,8 @@ func ClusterCommand(cfg *Config) *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.AddCommand(ClusterSpawnCommand(cfg))
 
 	// TODO remove hac/vmm flags
 	AddCommonFlags(cmd, cfg)

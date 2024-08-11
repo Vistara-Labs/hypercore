@@ -17,6 +17,9 @@ const (
 	vmProviderFlag       = "provider"
 	grpcBindAddrFlag     = "grpc-bind-addr"
 	clusterBindAddrFlag  = "cluster-bind-addr"
+	cpuFlag              = "cpu"
+	memoryFlag           = "mem"
+	imageRefFlag         = "image-ref"
 )
 
 func AddCommonFlags(cmd *cobra.Command, cfg *Config) {
@@ -42,8 +45,15 @@ func AddCommonFlags(cmd *cobra.Command, cfg *Config) {
 }
 
 func AddClusterFlags(cmd *cobra.Command, cfg *Config) {
-	cmd.Flags().StringVar(&cfg.GrpcBindAddr, grpcBindAddrFlag, ":8000", "GRPC Server bind address")
+	cmd.Flags().StringVar(&cfg.GrpcBindAddr, grpcBindAddrFlag, "0.0.0.0:8000", "GRPC Server bind address")
 	cmd.Flags().StringVar(&cfg.ClusterBindAddr, clusterBindAddrFlag, ":7946", "Cluster bind address")
+}
+
+func AddClusterSpawnFlags(cmd *cobra.Command, cfg *Config) {
+	cmd.Flags().StringVar(&cfg.GrpcBindAddr, grpcBindAddrFlag, "0.0.0.0:8000", "GRPC Server bind address")
+	cmd.Flags().IntVar(&cfg.ClusterSpawn.CPU, cpuFlag, 1, "CPU count")
+	cmd.Flags().IntVar(&cfg.ClusterSpawn.Memory, memoryFlag, 512, "Memory (in MB)")
+	cmd.Flags().StringVar(&cfg.ClusterSpawn.ImageRef, imageRefFlag, "", "Image Reference")
 }
 
 func BindCommandToViper(cmd *cobra.Command) {
