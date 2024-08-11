@@ -14,8 +14,9 @@ type server struct {
 	agent  *Agent
 }
 
-func (s *server) Spawn(ctx context.Context, req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error) {
+func (s *server) Spawn(_ context.Context, req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error) {
 	s.logger.Infof("Received spawn request: %v", req)
+
 	return s.agent.SpawnRequest(req)
 }
 

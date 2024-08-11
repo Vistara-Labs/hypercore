@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"time"
@@ -17,9 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-var (
-	QueryName = "hypercore_query"
-)
+const QueryName = "hypercore_query"
 
 type Agent struct {
 	eventCh chan serf.Event
@@ -66,6 +65,46 @@ func NewAgent(bindAddr string, repo *containerd.Repo, logger *log.Logger) (*Agen
 	return agent, nil
 }
 
+func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) ([]byte, error) {
+	if payload.GetDryRun() {
+		response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to wrap cluster message: %w", err)
+		}
+
+		return response, nil
+	}
+
+	id, err := a.ctrRepo.CreateContainer(context.Background(), containerd.CreateContainerOpts{
+		ImageRef:    payload.GetImageRef(),
+		Snapshotter: "",
+		Runtime: struct {
+			Name    string
+			Options interface{}
+		}{
+			Name: "io.containerd.runc.v2",
+		},
+		CioCreator: cio.NewCreator(cio.WithStdio),
+	})
+	if err != nil {
+		a.logger.WithError(err).Error("failed to spawn container")
+
+		response, err := wrapClusterErrorMessage(err.Error())
+		if err != nil {
+			return nil, fmt.Errorf("failed to wrap cluster error message: %w", err)
+		}
+
+		return response, nil
+	}
+
+	response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{Id: id})
+	if err != nil {
+		return nil, fmt.Errorf("failed to wrap cluster message: %w", err)
+	}
+
+	return response, nil
+}
+
 func (a *Agent) Handler() {
 	for event := range a.eventCh {
 		switch event.EventType() {
@@ -78,65 +117,57 @@ func (a *Agent) Handler() {
 
 			if query.SourceNode() == a.cfg.NodeName {
 				a.logger.Warn("Received event from self node, ignoring")
+
 				continue
 			}
 
 			var baseMessage pb.ClusterMessage
 			if err := proto.Unmarshal(query.Payload, &baseMessage); err != nil {
 				a.logger.WithError(err).Error("failed to unmarshal base payload")
+
 				continue
 			}
+
+			var response []byte
+			var err error
 
 			switch baseMessage.GetEvent() {
 			case pb.ClusterEvent_SPAWN:
 				var payload pb.VmSpawnRequest
 				if err := baseMessage.GetWrappedMessage().UnmarshalTo(&payload); err != nil {
 					a.logger.WithError(err).Error("failed to unmarshal payload")
-					continue
-				}
-
-				if payload.GetDryRun() {
-					response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{})
-					if err != nil {
-						a.logger.WithError(err).Error("failed to wrap cluster message")
-						continue
-					}
-
-					if err := query.Respond(response); err != nil {
-						a.logger.WithError(err).Error("failed to respond to query")
-					}
 
 					continue
 				}
 
-				id, err := a.ctrRepo.CreateContainer(context.Background(), containerd.CreateContainerOpts{
-					ImageRef:    payload.GetImageRef(),
-					Snapshotter: "",
-					Runtime: struct {
-						Name    string
-						Options interface{}
-					}{
-						Name: "io.containerd.runc.v2",
-					},
-					CioCreator: cio.NewCreator(cio.WithStdio),
-				})
-				if err != nil {
-					a.logger.WithError(err).Error("failed to create container")
-					continue
-				}
-
-				response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{Id: id})
-				if err != nil {
-					a.logger.WithError(err).Error("failed to wrap cluster message")
-					continue
-				}
-
-				if err := query.Respond(response); err != nil {
-					a.logger.WithError(err).Error("failed to respond to query")
-				}
+				response, err = a.handleSpawnRequest(&payload)
+			case pb.ClusterEvent_ERROR:
+				fallthrough
 			default:
 				a.logger.Errorf("got invalid event: %d", baseMessage.GetEvent())
+
+				continue
 			}
+
+			if err != nil {
+				a.logger.WithError(err).Errorf("failed to handle event: %d", baseMessage.GetEvent())
+
+				continue
+			}
+
+			if err := query.Respond(response); err != nil {
+				a.logger.WithError(err).Error("failed to respond to query")
+			}
+		case serf.EventMemberLeave:
+			fallthrough
+		case serf.EventMemberFailed:
+			fallthrough
+		case serf.EventMemberUpdate:
+			fallthrough
+		case serf.EventMemberReap:
+			fallthrough
+		case serf.EventUser:
+			fallthrough
 		default:
 			a.logger.Infof("Received event: %v", event)
 		}
@@ -222,5 +253,6 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error
 
 func (a *Agent) Join(addr string) error {
 	_, err := a.serf.Join([]string{addr}, true)
+
 	return err
 }

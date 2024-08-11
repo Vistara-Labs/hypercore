@@ -80,7 +80,7 @@ func ClusterCommand(cfg *Config) *cobra.Command {
 
 			return nil
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			logger := log.New()
 
 			repo, err := containerd.NewMicroVMRepository(containerdConfig(cfg))
@@ -89,6 +89,9 @@ func ClusterCommand(cfg *Config) *cobra.Command {
 			}
 
 			agent, err := cluster.NewAgent(cfg.ClusterBindAddr, repo, logger)
+			if err != nil {
+				return err
+			}
 
 			if len(args) > 0 {
 				if err := agent.Join(args[0]); err != nil {
