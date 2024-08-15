@@ -83,6 +83,10 @@ func (r *Repo) GetTasks(ctx context.Context) ([]*task.Process, error) {
 	return resp.GetTasks(), nil
 }
 
+func (r *Repo) GetContainers(ctx context.Context) ([]containerd.Container, error) {
+	return r.client.Containers(namespaces.WithNamespace(ctx, r.config.ContainerNamespace))
+}
+
 func (r *Repo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_ string, retErr error) {
 	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
 

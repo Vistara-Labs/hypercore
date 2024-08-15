@@ -2,9 +2,11 @@ package cluster
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"runtime"
 	"strconv"
 	"time"
 	"vistara-node/pkg/containerd"
@@ -18,7 +20,10 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-const QueryName = "hypercore_query"
+const (
+	QueryName         = "hypercore_query"
+	SpawnRequestLabel = "hypercore-request-payload"
+)
 
 type Agent struct {
 	eventCh chan serf.Event
@@ -66,6 +71,8 @@ func NewAgent(bindAddr string, repo *containerd.Repo, logger *log.Logger) (*Agen
 }
 
 func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) ([]byte, error) {
+	ctx := context.Background()
+
 	if payload.GetDryRun() {
 		response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{})
 		if err != nil {
@@ -75,7 +82,47 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) ([]byte, error) {
 		return response, nil
 	}
 
-	id, err := a.ctrRepo.CreateContainer(context.Background(), containerd.CreateContainerOpts{
+	containers, err := a.ctrRepo.GetContainers(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	vcpuUsed := 0
+	for _, container := range containers {
+		labels, err := container.Labels(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get labels for container %s", container.ID())
+		}
+
+		var labelPayload pb.VmSpawnRequest
+		if err := json.Unmarshal([]byte(labels[SpawnRequestLabel]), &labelPayload); err != nil {
+			return nil, err
+		}
+
+		vcpuUsed += int(labelPayload.Cores)
+	}
+
+	if vcpuUsed >= runtime.NumCPU() {
+		err := fmt.Errorf("have capacity for %d vCPUs, already in use: %d", runtime.NumCPU(), vcpuUsed)
+
+		a.logger.WithError(err).Error("cannot spawn container")
+
+		response, err := wrapClusterErrorMessage(err.Error())
+		if err != nil {
+			return nil, fmt.Errorf("failed to wrap cluster error message: %w", err)
+		}
+
+		return response, nil
+	}
+
+	// We store the request payload as part of the container labels
+	// so we can later check whether we have spare vCPUs left
+	encodedPayload, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	id, err := a.ctrRepo.CreateContainer(ctx, containerd.CreateContainerOpts{
 		ImageRef:    payload.GetImageRef(),
 		Snapshotter: "",
 		Runtime: struct {
@@ -85,6 +132,9 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) ([]byte, error) {
 			Name: "io.containerd.runc.v2",
 		},
 		CioCreator: cio.NewCreator(cio.WithStdio),
+		Labels: map[string]string{
+			SpawnRequestLabel: string(encodedPayload),
+		},
 	})
 	if err != nil {
 		a.logger.WithError(err).Error("failed to spawn container")
