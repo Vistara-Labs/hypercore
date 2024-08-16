@@ -13,6 +13,7 @@ import (
 	"github.com/containerd/containerd/api/services/tasks/v1"
 	"github.com/containerd/containerd/api/types/task"
 	"github.com/containerd/containerd/cio"
+	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
 	"github.com/google/uuid"
@@ -83,8 +84,14 @@ func (r *Repo) GetTasks(ctx context.Context) ([]*task.Process, error) {
 	return resp.GetTasks(), nil
 }
 
-func (r *Repo) GetContainers(ctx context.Context) ([]containerd.Container, error) {
-	return r.client.Containers(namespaces.WithNamespace(ctx, r.config.ContainerNamespace))
+func (r *Repo) GetContainer(ctx context.Context, id string) (containers.Container, error) {
+	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
+	container, err := r.client.ContainerService().Get(namespaceCtx, id)
+	if err != nil {
+		return containers.Container{}, err
+	}
+
+	return container, nil
 }
 
 func (r *Repo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_ string, retErr error) {

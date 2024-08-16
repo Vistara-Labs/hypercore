@@ -82,24 +82,24 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) ([]byte, error) {
 		return response, nil
 	}
 
-	containers, err := a.ctrRepo.GetContainers(ctx)
+	tasks, err := a.ctrRepo.GetTasks(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	vcpuUsed := 0
-	for _, container := range containers {
-		labels, err := container.Labels(ctx)
+	for _, task := range tasks {
+		container, err := a.ctrRepo.GetContainer(ctx, task.GetID())
 		if err != nil {
-			return nil, fmt.Errorf("failed to get labels for container %s", container.ID())
+			return nil, fmt.Errorf("failed to get container %s: %w", task.GetID(), err)
 		}
 
 		var labelPayload pb.VmSpawnRequest
-		if err := json.Unmarshal([]byte(labels[SpawnRequestLabel]), &labelPayload); err != nil {
+		if err := json.Unmarshal([]byte(container.Labels[SpawnRequestLabel]), &labelPayload); err != nil {
 			return nil, err
 		}
 
-		vcpuUsed += int(labelPayload.Cores)
+		vcpuUsed += int(labelPayload.GetCores())
 	}
 
 	if vcpuUsed >= runtime.NumCPU() {
