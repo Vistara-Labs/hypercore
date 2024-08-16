@@ -289,6 +289,15 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error
 				return nil, err
 			}
 
+			if resp.Event == pb.ClusterEvent_ERROR {
+				var errorResp pb.ErrorResponse
+				if err := resp.GetWrappedMessage().UnmarshalTo(&errorResp); err != nil {
+					return nil, err
+				}
+
+				return nil, fmt.Errorf("node returned failure response: %s", errorResp.GetError())
+			}
+
 			var wrappedResp pb.VmSpawnResponse
 			if err := resp.GetWrappedMessage().UnmarshalTo(&wrappedResp); err != nil {
 				return nil, err
