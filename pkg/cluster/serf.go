@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/pbnjay/memory"
 	"net"
 	"runtime"
 	"strconv"
@@ -118,8 +117,14 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) ([]byte, error) {
 		return response, nil
 	}
 
-	if (memUsed + int(payload.GetMemory())) > memory.FreeMemory() {
-		err := fmt.Errorf("have capacity for %d memory, already in use: %d, requested: %d", memory.FreeMemory(), memUsed, payload.GetMemory())
+	availableMem, err := getAvailableMem()
+	if err != nil {
+		return nil, err
+	}
+	availableMem /= 1024
+
+	if (memUsed + int(payload.GetMemory())) > int(availableMem) {
+		err := fmt.Errorf("have capacity for %d MB, already in use: %d MB, requested: %d MB", availableMem, memUsed, payload.GetMemory())
 
 		a.logger.WithError(err).Error("cannot spawn container")
 
@@ -305,7 +310,7 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error
 				return nil, err
 			}
 
-			if resp.Event == pb.ClusterEvent_ERROR {
+			if resp.GetEvent() == pb.ClusterEvent_ERROR {
 				var errorResp pb.ErrorResponse
 				if err := resp.GetWrappedMessage().UnmarshalTo(&errorResp); err != nil {
 					return nil, err
