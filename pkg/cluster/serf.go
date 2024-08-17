@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/pbnjay/memory"
 	"net"
 	"runtime"
 	"strconv"
@@ -88,6 +89,7 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) ([]byte, error) {
 	}
 
 	vcpuUsed := 0
+	memUsed := 0
 	for _, task := range tasks {
 		container, err := a.ctrRepo.GetContainer(ctx, task.GetID())
 		if err != nil {
@@ -100,10 +102,24 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) ([]byte, error) {
 		}
 
 		vcpuUsed += int(labelPayload.GetCores())
+		memUsed += int(labelPayload.GetMemory())
 	}
 
-	if vcpuUsed >= runtime.NumCPU() {
-		err := fmt.Errorf("have capacity for %d vCPUs, already in use: %d", runtime.NumCPU(), vcpuUsed)
+	if (vcpuUsed + int(payload.GetCores())) > runtime.NumCPU() {
+		err := fmt.Errorf("have capacity for %d vCPUs, already in use: %d, requested: %d", runtime.NumCPU(), vcpuUsed, payload.GetCores())
+
+		a.logger.WithError(err).Error("cannot spawn container")
+
+		response, err := wrapClusterErrorMessage(err.Error())
+		if err != nil {
+			return nil, fmt.Errorf("failed to wrap cluster error message: %w", err)
+		}
+
+		return response, nil
+	}
+
+	if (memUsed + int(payload.GetMemory())) > memory.FreeMemory() {
+		err := fmt.Errorf("have capacity for %d memory, already in use: %d, requested: %d", memory.FreeMemory(), memUsed, payload.GetMemory())
 
 		a.logger.WithError(err).Error("cannot spawn container")
 

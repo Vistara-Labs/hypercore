@@ -17,6 +17,7 @@ require (
 	github.com/hashicorp/serf v0.10.1
 	github.com/lorenzosaino/go-sysctl v0.3.1
 	github.com/opencontainers/runtime-spec v1.2.0
+	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/spf13/viper v1.19.0
 	github.com/vistara-labs/firecracker-containerd v0.0.0-20240707190021-1287a7cb7490
 	google.golang.org/grpc v1.65.0
