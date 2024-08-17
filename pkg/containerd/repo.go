@@ -28,6 +28,10 @@ type CreateContainerOpts struct {
 		Name    string
 		Options interface{}
 	}
+	Limits *struct {
+		CPUFraction float64
+		MemoryBytes uint64
+	}
 	Labels     map[string]string
 	CioCreator cio.Creator
 }
@@ -119,6 +123,22 @@ func (r *Repo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_
 
 	containerID := uuid.NewString()
 
+	specOpts := []oci.SpecOpts{
+		oci.WithImageConfig(image),
+		oci.WithHostNamespace(specs.NetworkNamespace),
+		oci.WithHostHostsFile,
+		oci.WithHostResolvconf,
+	}
+	if opts.Limits != nil {
+		specOpts = append(
+			specOpts,
+			oci.WithMemoryLimit(opts.Limits.MemoryBytes),
+			// Quota is valid for every 100ms
+			// https://docs.docker.com/engine/containers/resource_constraints/#configure-the-default-cfs-scheduler
+			oci.WithCPUCFS(int64(opts.Limits.CPUFraction*100000), 100000),
+		)
+	}
+
 	container, err := r.client.NewContainer(
 		namespaceCtx,
 		containerID,
@@ -127,13 +147,7 @@ func (r *Repo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_
 		containerd.WithNewSnapshot(uuid.NewString(), image),
 		containerd.WithRuntime(opts.Runtime.Name, opts.Runtime.Options),
 		containerd.WithContainerLabels(opts.Labels),
-		// TODO use bridge driver from CNI plugins
-		containerd.WithNewSpec(
-			oci.WithImageConfig(image),
-			oci.WithHostNamespace(specs.NetworkNamespace),
-			oci.WithHostHostsFile,
-			oci.WithHostResolvconf,
-		),
+		containerd.WithNewSpec(specOpts...),
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to create new container %s: %w", containerID, err)

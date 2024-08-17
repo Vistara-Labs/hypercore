@@ -152,6 +152,13 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) ([]byte, error) {
 		}{
 			Name: "io.containerd.runc.v2",
 		},
+		Limits: &struct {
+			CPUFraction float64
+			MemoryBytes uint64
+		}{
+			CPUFraction: float64(payload.GetCores()) / float64(runtime.NumCPU()),
+			MemoryBytes: uint64(payload.GetMemory()) * 1024 * 1024,
+		},
 		CioCreator: cio.NewCreator(cio.WithStdio),
 		Labels: map[string]string{
 			SpawnRequestLabel: string(encodedPayload),
