@@ -16,6 +16,9 @@ import (
 	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
+	"github.com/containerd/containerd/pkg/netns"
+	"github.com/containernetworking/cni/libcni"
+	"github.com/containernetworking/cni/pkg/types"
 	"github.com/google/uuid"
 	"github.com/hashicorp/go-multierror"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -123,11 +126,14 @@ func (r *Repo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_
 
 	containerID := uuid.NewString()
 
+	netNs, err := netns.NewNetNS("/run/netns")
+	if err != nil {
+		return "", fmt.Errorf("failed to create new net ns: %w", err)
+	}
+
 	specOpts := []oci.SpecOpts{
 		oci.WithImageConfig(image),
-		oci.WithHostNamespace(specs.NetworkNamespace),
-		oci.WithHostHostsFile,
-		oci.WithHostResolvconf,
+		oci.WithLinuxNamespace(specs.LinuxNamespace{Type: "network", Path: netNs.GetPath()}),
 	}
 	if opts.Limits != nil {
 		specOpts = append(
@@ -160,6 +166,46 @@ func (r *Repo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_
 			}
 		}
 	}()
+
+	ptpConfig := `
+      {
+        "type": "ptp",
+        "ipMasq": true,
+        "ipam": {
+          "type": "host-local",
+          "subnet": "192.168.127.0/24"
+        },
+        "dns": {
+          "nameservers": ["1.1.1.1"]
+        }
+      }
+    `
+	firewallConfig := `{"type": "firewall"}`
+	tapConfig := `{"type": "tc-redirect-tap"}`
+
+	cniPlugins := []*libcni.NetworkConfig{
+		{Network: &types.NetConf{Type: "ptp"}, Bytes: []byte(ptpConfig)},
+		{Network: &types.NetConf{Type: "firewall"}, Bytes: []byte(firewallConfig)},
+	}
+
+	if opts.Runtime.Name == "hypercore.example" {
+		cniPlugins = append(cniPlugins, &libcni.NetworkConfig{Network: &types.NetConf{Type: "tc-redirect-tap"}, Bytes: []byte(tapConfig)})
+	}
+
+	_, err = libcni.NewCNIConfig([]string{"/opt/cni/bin"}, nil).AddNetworkList(
+		namespaceCtx, &libcni.NetworkConfigList{
+			Name:       "hypercore-cni",
+			CNIVersion: "0.4.0",
+			Plugins:    cniPlugins,
+		}, &libcni.RuntimeConf{
+			ContainerID: containerID,
+			NetNS:       netNs.GetPath(),
+			IfName:      "eth0",
+		},
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to add CNI network list: %w", err)
+	}
 
 	task, err := container.NewTask(namespaceCtx, opts.CioCreator)
 	if err != nil {
