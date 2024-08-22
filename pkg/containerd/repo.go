@@ -3,6 +3,7 @@ package containerd
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"syscall"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/containerd/containerd/pkg/netns"
 	"github.com/containernetworking/cni/libcni"
 	"github.com/containernetworking/cni/pkg/types"
+	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/google/uuid"
 	"github.com/hashicorp/go-multierror"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -42,6 +44,16 @@ type CreateContainerOpts struct {
 type Repo struct {
 	client *containerd.Client
 	config *Config
+}
+
+type NetNS struct {
+	PrimaryInterface int
+	Interfaces       []NetInterface
+}
+
+type NetInterface struct {
+	net.Interface
+	Addrs []net.Addr
 }
 
 func NewMicroVMRepository(cfg *Config) (*Repo, error) {
@@ -78,6 +90,45 @@ func (r *Repo) Attach(ctx context.Context, containerID string) error {
 	<-statusC
 
 	return nil
+}
+
+// Reference: https://github.com/containerd/nerdctl/blob/b6257f3a980b19b0a530ff48b273b527a2c65b34/pkg/containerinspector/containerinspector_linux.go#L30
+func (r *Repo) GetTaskNetNsInfo(_ context.Context, task *task.Process) (*NetNS, error) {
+	netNs := &NetNS{Interfaces: make([]NetInterface, 0)}
+	if err := ns.WithNetNSPath(fmt.Sprintf("/proc/%d/ns/net", task.GetPid()), func(_ ns.NetNS) error {
+		interfaces, err := net.Interfaces()
+		if err != nil {
+			return err
+		}
+
+		for _, iface := range interfaces {
+			addrs, err := iface.Addrs()
+			if err != nil {
+				return err
+			}
+			if iface.Flags&net.FlagLoopback == 0 && iface.Flags&net.FlagUp != 0 && !strings.HasPrefix(iface.Name, "lo") {
+				netNs.PrimaryInterface = iface.Index
+			}
+			netNs.Interfaces = append(netNs.Interfaces, NetInterface{iface, addrs})
+		}
+
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	return netNs, nil
+}
+
+func (r *Repo) GetTask(ctx context.Context, containerID string) (*task.Process, error) {
+	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
+
+	resp, err := r.client.TaskService().Get(namespaceCtx, &tasks.GetRequest{ContainerID: containerID})
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.GetProcess(), nil
 }
 
 func (r *Repo) GetTasks(ctx context.Context) ([]*task.Process, error) {
