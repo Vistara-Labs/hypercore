@@ -133,6 +133,7 @@ func (r *Repo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_
 
 	specOpts := []oci.SpecOpts{
 		oci.WithImageConfig(image),
+		oci.WithHostResolvconf,
 		oci.WithLinuxNamespace(specs.LinuxNamespace{Type: "network", Path: netNs.GetPath()}),
 	}
 	if opts.Limits != nil {
@@ -173,10 +174,11 @@ func (r *Repo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_
         "ipMasq": true,
         "ipam": {
           "type": "host-local",
-          "subnet": "192.168.127.0/24"
-        },
-        "dns": {
-          "nameservers": ["1.1.1.1"]
+          "subnet": "192.168.127.0/24",
+          "resolvConf": "/etc/resolv.conf",
+          "routes": [
+            { "dst": "0.0.0.0/0" }
+          ]
         }
       }
     `
