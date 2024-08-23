@@ -120,6 +120,30 @@ func (r *Repo) GetTaskNetNsInfo(_ context.Context, task *task.Process) (*NetNS, 
 	return netNs, nil
 }
 
+func (r *Repo) GetContainerPrimaryIP(ctx context.Context, containerID string) (string, error) {
+	task, err := r.GetTask(ctx, containerID)
+	if err != nil {
+		return "", err
+	}
+
+	netNs, err := r.GetTaskNetNsInfo(ctx, task)
+	if err != nil {
+		return "", err
+	}
+
+	if netNs.PrimaryInterface == 0 {
+		return "", fmt.Errorf("container %s has no primary interface", containerID)
+	}
+
+	for _, iface := range netNs.Interfaces {
+		if iface.Index == netNs.PrimaryInterface {
+			return iface.Addrs[0].String(), nil
+		}
+	}
+
+	return "", fmt.Errorf("could not find primary interface with index %d", netNs.PrimaryInterface)
+}
+
 func (r *Repo) GetTask(ctx context.Context, containerID string) (*task.Process, error) {
 	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
 

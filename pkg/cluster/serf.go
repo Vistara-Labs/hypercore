@@ -26,15 +26,21 @@ const (
 )
 
 type Agent struct {
-	eventCh chan serf.Event
-	ctrRepo *containerd.Repo
-	cfg     *serf.Config
-	serf    *serf.Serf
-	logger  *log.Logger
+	eventCh      chan serf.Event
+	serviceProxy *ServiceProxy
+	ctrRepo      *containerd.Repo
+	cfg          *serf.Config
+	serf         *serf.Serf
+	logger       *log.Logger
 }
 
 func NewAgent(bindAddr string, repo *containerd.Repo, logger *log.Logger) (*Agent, error) {
 	eventCh := make(chan serf.Event, 64)
+
+	serviceProxy, err := NewServiceProxy()
+	if err != nil {
+		return nil, err
+	}
 
 	addr, port, err := net.SplitHostPort(bindAddr)
 	if err != nil {
@@ -60,17 +66,18 @@ func NewAgent(bindAddr string, repo *containerd.Repo, logger *log.Logger) (*Agen
 	}
 
 	agent := &Agent{
-		eventCh: eventCh,
-		cfg:     cfg,
-		serf:    serf,
-		logger:  logger,
-		ctrRepo: repo,
+		eventCh:      eventCh,
+		cfg:          cfg,
+		serviceProxy: serviceProxy,
+		serf:         serf,
+		logger:       logger,
+		ctrRepo:      repo,
 	}
 
 	return agent, nil
 }
 
-func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) ([]byte, error) {
+func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retErr error) {
 	ctx := context.Background()
 
 	if payload.GetDryRun() {
@@ -82,9 +89,16 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) ([]byte, error) {
 		return response, nil
 	}
 
+	defer func() {
+		if retErr != nil {
+			a.logger.WithError(retErr).Error("handleSpawnRequest failed")
+			ret, retErr = wrapClusterErrorMessage(retErr.Error())
+		}
+	}()
+
 	tasks, err := a.ctrRepo.GetTasks(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get existing tasks to check capacity: %w", err)
 	}
 
 	vcpuUsed := 0
@@ -105,16 +119,7 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) ([]byte, error) {
 	}
 
 	if (vcpuUsed + int(payload.GetCores())) > runtime.NumCPU() {
-		err := fmt.Errorf("have capacity for %d vCPUs, already in use: %d, requested: %d", runtime.NumCPU(), vcpuUsed, payload.GetCores())
-
-		a.logger.WithError(err).Error("cannot spawn container")
-
-		response, err := wrapClusterErrorMessage(err.Error())
-		if err != nil {
-			return nil, fmt.Errorf("failed to wrap cluster error message: %w", err)
-		}
-
-		return response, nil
+		return nil, fmt.Errorf("cannot spawn container: have capacity for %d vCPUs, already in use: %d, requested: %d", runtime.NumCPU(), vcpuUsed, payload.GetCores())
 	}
 
 	availableMem, err := getAvailableMem()
@@ -124,16 +129,7 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) ([]byte, error) {
 	availableMem /= 1024
 
 	if (memUsed + int(payload.GetMemory())) > int(availableMem) {
-		err := fmt.Errorf("have capacity for %d MB, already in use: %d MB, requested: %d MB", availableMem, memUsed, payload.GetMemory())
-
-		a.logger.WithError(err).Error("cannot spawn container")
-
-		response, err := wrapClusterErrorMessage(err.Error())
-		if err != nil {
-			return nil, fmt.Errorf("failed to wrap cluster error message: %w", err)
-		}
-
-		return response, nil
+		return nil, fmt.Errorf("cannot spawn container: have capacity for %d MB, already in use: %d MB, requested: %d MB", availableMem, memUsed, payload.GetMemory())
 	}
 
 	// We store the request payload as part of the container labels
@@ -165,14 +161,16 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) ([]byte, error) {
 		},
 	})
 	if err != nil {
-		a.logger.WithError(err).Error("failed to spawn container")
+		return nil, errors.New("failed to spawn container")
+	}
 
-		response, err := wrapClusterErrorMessage(err.Error())
-		if err != nil {
-			return nil, fmt.Errorf("failed to wrap cluster error message: %w", err)
-		}
+	ip, err := a.ctrRepo.GetContainerPrimaryIP(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get IP for container %s", id)
+	}
 
-		return response, nil
+	if err := a.serviceProxy.Register(id, ip, 0); err != nil {
+		return nil, fmt.Errorf("failed to register container %s IP %s with proxy: %w", id, ip, err)
 	}
 
 	response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{Id: id})
