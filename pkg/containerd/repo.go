@@ -137,7 +137,7 @@ func (r *Repo) GetContainerPrimaryIP(ctx context.Context, containerID string) (s
 
 	for _, iface := range netNs.Interfaces {
 		if iface.Index == netNs.PrimaryInterface {
-			return iface.Addrs[0].String(), nil
+			return strings.Split(iface.Addrs[0].String(), "/")[0], nil
 		}
 	}
 
