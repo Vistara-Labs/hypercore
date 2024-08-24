@@ -37,7 +37,7 @@ type Agent struct {
 func NewAgent(bindAddr string, repo *containerd.Repo, logger *log.Logger) (*Agent, error) {
 	eventCh := make(chan serf.Event, 64)
 
-	serviceProxy, err := NewServiceProxy()
+	serviceProxy, err := NewServiceProxy(logger)
 	if err != nil {
 		return nil, err
 	}
@@ -169,11 +169,12 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 		return nil, fmt.Errorf("failed to get IP for container %s", id)
 	}
 
-	if err := a.serviceProxy.Register(id, ip, 0); err != nil {
+	port, err := a.serviceProxy.Register(id, fmt.Sprintf("%s:%d", ip, 6379))
+	if err != nil {
 		return nil, fmt.Errorf("failed to register container %s IP %s with proxy: %w", id, ip, err)
 	}
 
-	response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{Id: id})
+	response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{Id: id, Port: uint32(port)})
 	if err != nil {
 		return nil, fmt.Errorf("failed to wrap cluster message: %w", err)
 	}

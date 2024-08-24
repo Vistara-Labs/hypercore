@@ -33,6 +33,7 @@ message VmSpawnRequest {
 
 message VmSpawnResponse {
     string id = 1;
+    uint32 port = 2;
 }
 
 message VmQueryRequest {
