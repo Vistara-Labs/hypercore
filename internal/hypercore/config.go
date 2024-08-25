@@ -11,5 +11,6 @@ type Config struct {
 		CPU      int
 		Memory   int
 		ImageRef string
+		Ports    string
 	}
 }

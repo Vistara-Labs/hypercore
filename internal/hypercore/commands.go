@@ -6,6 +6,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"vistara-node/pkg/cluster"
 
@@ -85,6 +87,15 @@ func ClusterSpawnCommand(cfg *Config) *cobra.Command {
 			return nil
 		},
 		RunE: func(_ *cobra.Command, _ []string) error {
+			ports := make([]uint32, 0)
+			for _, port := range strings.Split(cfg.ClusterSpawn.Ports, ",") {
+				parsed, err := strconv.ParseUint(port, 10, 0)
+				if err != nil {
+					return err
+				}
+				ports = append(ports, uint32(parsed))
+			}
+
 			conn, err := grpc.NewClient(cfg.GrpcBindAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 			if err != nil {
 				return err
@@ -96,6 +107,7 @@ func ClusterSpawnCommand(cfg *Config) *cobra.Command {
 				Cores:    uint32(cfg.ClusterSpawn.CPU),
 				Memory:   uint32(cfg.ClusterSpawn.Memory),
 				ImageRef: cfg.ClusterSpawn.ImageRef,
+				Ports:    ports,
 			})
 			if err != nil {
 				return err

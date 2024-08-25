@@ -20,6 +20,7 @@ const (
 	cpuFlag              = "cpu"
 	memoryFlag           = "mem"
 	imageRefFlag         = "image-ref"
+	portsFlag            = "ports"
 )
 
 func AddCommonFlags(cmd *cobra.Command, cfg *Config) {
@@ -54,6 +55,7 @@ func AddClusterSpawnFlags(cmd *cobra.Command, cfg *Config) {
 	cmd.Flags().IntVar(&cfg.ClusterSpawn.CPU, cpuFlag, 1, "CPU count")
 	cmd.Flags().IntVar(&cfg.ClusterSpawn.Memory, memoryFlag, 512, "Memory (in MB)")
 	cmd.Flags().StringVar(&cfg.ClusterSpawn.ImageRef, imageRefFlag, "", "Image Reference")
+	cmd.Flags().StringVar(&cfg.ClusterSpawn.Ports, portsFlag, "", "comma-separated list of ports to expose")
 }
 
 func BindCommandToViper(cmd *cobra.Command) {

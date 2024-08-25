@@ -80,6 +80,12 @@ func NewAgent(bindAddr string, repo *containerd.Repo, logger *log.Logger) (*Agen
 func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retErr error) {
 	ctx := context.Background()
 
+	for _, port := range payload.GetPorts() {
+		if port > 0xffff {
+			return nil, fmt.Errorf("got invalid port %d greater than %d", port, 0xffff)
+		}
+	}
+
 	if payload.GetDryRun() {
 		response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{})
 		if err != nil {
@@ -169,12 +175,18 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 		return nil, fmt.Errorf("failed to get IP for container %s", id)
 	}
 
-	port, err := a.serviceProxy.Register(id, fmt.Sprintf("%s:%d", ip, 6379))
-	if err != nil {
-		return nil, fmt.Errorf("failed to register container %s IP %s with proxy: %w", id, ip, err)
+	portMap := make(map[uint32]uint32)
+
+	for _, port := range payload.GetPorts() {
+		addr := fmt.Sprintf("%s:%d", ip, port)
+		mappedPort, err := a.serviceProxy.Register(id, addr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to register container %s addr %s with proxy: %w", id, addr, err)
+		}
+		portMap[port] = uint32(mappedPort)
 	}
 
-	response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{Id: id, Port: uint32(port)})
+	response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{Id: id, Ports: portMap})
 	if err != nil {
 		return nil, fmt.Errorf("failed to wrap cluster message: %w", err)
 	}
