@@ -3,8 +3,6 @@ package firecracker
 import (
 	"fmt"
 	"runtime"
-	"strconv"
-	"strings"
 	"vistara-node/pkg/hypervisor/shared"
 	"vistara-node/pkg/models"
 	"vistara-node/pkg/network"
@@ -24,8 +22,13 @@ func CreateConfig(opts ...ConfigOption) (*VmmConfig, error) {
 	return cfg, nil
 }
 
-func WithMicroVM(vm *models.MicroVM, status *models.NetworkInterfaceStatus, vsockPath string) ConfigOption {
+func WithMicroVM(vm *models.MicroVM, vsockPath string) ConfigOption {
 	return func(cfg *VmmConfig) error {
+		mac, ip, err := network.GetLinkMacIP("eth0")
+		if err != nil {
+			return fmt.Errorf("failed to get link IP: %w", err)
+		}
+
 		cfg.MachineConfig = MachineConfig{
 			MemSizeMib: int64(vm.Spec.MemoryInMb),
 			VcpuCount:  int64(vm.Spec.VCPU),
@@ -35,8 +38,8 @@ func WithMicroVM(vm *models.MicroVM, status *models.NetworkInterfaceStatus, vsoc
 		cfg.NetDevices = []NetworkInterfaceConfig{
 			{
 				IfaceID:     "eth0",
-				HostDevName: status.HostDeviceName,
-				GuestMAC:    vm.Spec.GuestMAC,
+				HostDevName: "tap0",
+				GuestMAC:    mac.String(),
 			},
 		}
 
@@ -67,15 +70,12 @@ func WithMicroVM(vm *models.MicroVM, status *models.NetworkInterfaceStatus, vsoc
 			UDSPath:  vsockPath,
 		}
 
-		tapIdx, err := strconv.Atoi(strings.ReplaceAll(status.HostDeviceName, "hypercore-", ""))
-		if err != nil {
-			return fmt.Errorf("invalid interface %s: %w", status.HostDeviceName, err)
-		}
-
-		tapDetails := network.GetTapDetails(tapIdx)
+		routeIP := ip.To4()
+		// 192.168.127.X -> 192.168.127.1
+		routeIP[3] = 1
 
 		kernelCmdLine := DefaultKernelCmdLine()
-		kernelCmdLine.Set("ip", fmt.Sprintf("%s::%s:%s::eth0::%s", tapDetails.VMIP.To4(), tapDetails.TapIP.To4(), tapDetails.Mask.To4(), "1.1.1.1"))
+		kernelCmdLine.Set("ip", fmt.Sprintf("%s::%s:%s::eth0::%s", ip.To4().String(), routeIP.String(), ip.DefaultMask().String(), "1.1.1.1"))
 		kernelArgs := kernelCmdLine.String()
 
 		bootSourceConfig := BootSourceConfig{

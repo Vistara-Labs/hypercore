@@ -53,27 +53,7 @@ func (c *Service) Start(_ context.Context, vm *models.MicroVM, completionFn func
 		return fmt.Errorf("ensuring state dir: %w", err)
 	}
 
-	// We will have only one interface, i.e. the TAP device
-	status := &models.NetworkInterfaceStatus{}
-	nface := network.NewNetworkInterface(&models.NetworkInterface{
-		GuestMAC:   vm.Spec.GuestMAC,
-		BridgeName: vm.Spec.HostNetDev,
-	}, status)
-	if err := nface.Create(); err != nil {
-		return fmt.Errorf("creating network interface %w", err)
-	}
-
-	defer func() {
-		if retErr != nil {
-			if err := network.IfaceDelete(ports.DeleteIfaceInput{
-				DeviceName: status.HostDeviceName,
-			}); err != nil {
-				retErr = multierror.Append(retErr, err)
-			}
-		}
-	}()
-
-	proc, err := c.startMicroVM(vm, vmState, status, completionFn)
+	proc, err := c.startMicroVM(vm, vmState, completionFn)
 
 	if err != nil {
 		return fmt.Errorf("starting cloudhypervisor process %w", err)
@@ -83,16 +63,25 @@ func (c *Service) Start(_ context.Context, vm *models.MicroVM, completionFn func
 		return fmt.Errorf("saving pid %d to file: %w", proc.Pid, err)
 	}
 
-	if err = vmState.SetRuntimeState(RuntimeState{HostIface: status.HostDeviceName}); err != nil {
+	if err = vmState.SetRuntimeState(RuntimeState{HostIface: "tap0"}); err != nil {
 		return fmt.Errorf("saving runtime state: %w", err)
 	}
 
 	return nil
 }
 
-func (c *Service) startMicroVM(vm *models.MicroVM, vmState *State, status *models.NetworkInterfaceStatus, completionFn func(error)) (*os.Process, error) {
+func (c *Service) startMicroVM(vm *models.MicroVM, vmState *State, completionFn func(error)) (*os.Process, error) {
 	kernelCmdLine := DefaultKernelCmdLine()
-	kernelCmdLine.Set("ip", fmt.Sprintf("%s::%s:%s::eth0::%s", status.TapDetails.VMIP.To4(), status.TapDetails.TapIP.To4(), status.TapDetails.Mask.To4(), "1.1.1.1"))
+	mac, ip, err := network.GetLinkMacIP("eth0")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get link IP: %w", err)
+	}
+
+	routeIP := ip.To4()
+	// 192.168.127.X -> 192.168.127.1
+	routeIP[3] = 1
+
+	kernelCmdLine.Set("ip", fmt.Sprintf("%s::%s:%s::eth0::%s", ip.To4().String(), routeIP.String(), ip.DefaultMask().String(), "1.1.1.1"))
 
 	args := []string{
 		"--log-file",
@@ -108,10 +97,10 @@ func (c *Service) startMicroVM(vm *models.MicroVM, vmState *State, status *model
 		"--memory", fmt.Sprintf("size=%dM", vm.Spec.MemoryInMb),
 		"--disk", fmt.Sprintf("path=%s,readonly=on", vm.Spec.RootfsPath), fmt.Sprintf("path=%s", vm.Spec.ImagePath),
 		"--net", fmt.Sprintf("tap=%s,mac=%s,ip=%s,mask=%s",
-			status.HostDeviceName,
-			status.MACAddress,
-			status.TapDetails.TapIP.To4(),
-			status.TapDetails.Mask.To4()),
+			"tap0",
+			mac.String(),
+			ip.To4(),
+			ip.DefaultMask().String()),
 	}
 
 	stdOutFile, err := c.fs.OpenFile(vmState.StdoutPath(), os.O_WRONLY|os.O_CREATE|os.O_APPEND, defaults.DataFilePerm)
@@ -169,15 +158,6 @@ func (c *Service) Stop(_ context.Context, vm *models.MicroVM) error {
 	}
 
 	retErr := proc.Kill()
-
-	state, err := vmState.RuntimeState()
-	if err != nil {
-		retErr = multierror.Append(retErr, err)
-	} else if err = network.IfaceDelete(ports.DeleteIfaceInput{
-		DeviceName: state.HostIface,
-	}); err != nil {
-		retErr = multierror.Append(retErr, err)
-	}
 
 	if err := vmState.Delete(); err != nil {
 		retErr = multierror.Append(retErr, err)
