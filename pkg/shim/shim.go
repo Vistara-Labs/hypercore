@@ -15,12 +15,14 @@ import (
 	"github.com/containerd/containerd/api/types/task"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/events/exchange"
+	"github.com/containerd/containerd/oci"
 	"github.com/containerd/containerd/protobuf"
 	"github.com/containerd/containerd/protobuf/types"
 	"github.com/containerd/containerd/runtime/v2/shim"
 	"github.com/containerd/log"
 	"github.com/containerd/ttrpc"
 	"github.com/containerd/typeurl/v2"
+	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/firecracker-microvm/firecracker-go-sdk/vsock"
 	"github.com/google/uuid"
 	"github.com/spf13/afero"
@@ -218,8 +220,23 @@ func (s *HyperShim) vmCompletion(waitErr error) {
 }
 
 func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) (_ *taskAPI.CreateTaskResponse, retErr error) {
+	ociSpec, err := oci.ReadSpec(req.GetBundle() + "/config.json")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read spec at %s", req.GetBundle())
+	}
+
+	networkNs := ""
+	for _, ns := range ociSpec.Linux.Namespaces {
+		if ns.Type == "network" {
+			networkNs = ns.Path
+		}
+	}
+	if networkNs == "" {
+		return nil, errors.New("no network namespace specified")
+	}
+
 	if s.vmState != nil {
-		return nil, errors.New("Create called multiple times")
+		return nil, errors.New("create called multiple times")
 	}
 
 	if len(req.GetRootfs()) != 1 {
@@ -249,8 +266,10 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 		Spec: spec,
 	}
 
-	if err := hypervisorState.vmSvc.Start(ctx, hypervisorState.vm, s.vmCompletion); err != nil {
-		return nil, fmt.Errorf("failed to start VM: %w", err)
+	if err := ns.WithNetNSPath(networkNs, func(_ ns.NetNS) error {
+		return hypervisorState.vmSvc.Start(ctx, hypervisorState.vm, s.vmCompletion)
+	}); err != nil {
+		return nil, fmt.Errorf("failed to exec under ns %s: %w", networkNs, err)
 	}
 
 	s.vmState = hypervisorState
@@ -323,7 +342,11 @@ func (s *HyperShim) Start(ctx context.Context, req *taskAPI.StartRequest) (*task
 }
 
 func (s *HyperShim) Delete(ctx context.Context, req *taskAPI.DeleteRequest) (*taskAPI.DeleteResponse, error) {
-	return s.taskManager.DeleteProcess(ctx, req, s.vmState.agentClient)
+	if s.vmState != nil {
+		return s.taskManager.DeleteProcess(ctx, req, s.vmState.agentClient)
+	}
+
+	return nil, errors.New("VM not spawned")
 }
 
 func (s *HyperShim) Pids(ctx context.Context, req *taskAPI.PidsRequest) (*taskAPI.PidsResponse, error) {
