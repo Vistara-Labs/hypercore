@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 
 	taskAPI "github.com/containerd/containerd/api/runtime/task/v2"
@@ -226,14 +227,17 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 	}
 
 	networkNs := ""
-	for idx, ns := range ociSpec.Linux.Namespaces {
+	filteredNs := make([]specs.LinuxNamespace, 0)
+	for _, ns := range ociSpec.Linux.Namespaces {
 		if ns.Type == "network" {
 			networkNs = ns.Path
 			// This OCI config is also passed to the agent inside the VM, so remove
 			// our custom network namespace from the spec
-			ociSpec.Linux.Namespaces[idx].Path = ""
+			continue
 		}
+		filteredNs = append(filteredNs, ns)
 	}
+	ociSpec.Linux.Namespaces = filteredNs
 	if networkNs == "" {
 		return nil, errors.New("no network namespace specified")
 	}
