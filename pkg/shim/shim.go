@@ -226,9 +226,12 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 	}
 
 	networkNs := ""
-	for _, ns := range ociSpec.Linux.Namespaces {
+	for idx, ns := range ociSpec.Linux.Namespaces {
 		if ns.Type == "network" {
 			networkNs = ns.Path
+			// This OCI config is also passed to the agent inside the VM, so remove
+			// our custom network namespace from the spec
+			ociSpec.Linux.Namespaces[idx].Path = ""
 		}
 	}
 	if networkNs == "" {
@@ -302,9 +305,9 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 	// in the guest, /dev/vdb (/dev/vda is the rootfs)
 	req.Rootfs[0].Source = "/dev/vdb"
 
-	ociConfig, err := os.ReadFile(req.GetBundle() + "/config.json")
+	ociConfig, err := json.Marshal(ociSpec)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config.json from %s: %w", req.GetBundle(), err)
+		return nil, fmt.Errorf("failed to marshal OCI spec: %w", err)
 	}
 
 	extraData := generateExtraData(s.getAndIncrementPortCount(), ociConfig, nil)
