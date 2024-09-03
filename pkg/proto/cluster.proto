@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+import "google/protobuf/any.proto";
+
+package cluster.services.api;
+
+option go_package = "pkg/proto/cluster;cluster";
+
+service ClusterService {
+    rpc Spawn(VmSpawnRequest) returns (VmSpawnResponse);
+}
+
+enum ClusterEvent {
+    ERROR = 0;
+    SPAWN = 1;
+}
+
+message ClusterMessage {
+    ClusterEvent event = 1;
+    google.protobuf.Any wrappedMessage = 2;
+}
+
+message ErrorResponse {
+    string error = 1;
+}
+
+message VmSpawnRequest {
+    uint32 cores = 1;
+    uint32 memory = 2;
+    string image_ref = 3;
+    repeated uint32 ports = 4;
+    bool dry_run = 5;
+}
+
+message VmSpawnResponse {
+    string id = 1;
+    map<uint32, uint32> ports = 2;
+}
+
+message VmQueryRequest {
+}
+
+message VmQueryResponse {
+    map<string, VmSpawnRequest> vms = 1;
+}

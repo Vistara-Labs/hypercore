@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"vistara-node/pkg/defaults"
 	"vistara-node/pkg/models"
-	"vistara-node/pkg/network"
 	"vistara-node/pkg/ports"
 
 	"github.com/hashicorp/go-multierror"
@@ -54,28 +53,7 @@ func (f *Service) Start(_ context.Context, vm *models.MicroVM, completionFn func
 		return fmt.Errorf("ensuring state dir: %w", err)
 	}
 
-	status := &models.NetworkInterfaceStatus{}
-
-	// We will have only one interface, i.e. the TAP device
-	nface := network.NewNetworkInterface(&models.NetworkInterface{
-		GuestMAC:   vm.Spec.GuestMAC,
-		BridgeName: vm.Spec.HostNetDev,
-	}, status)
-	if err := nface.Create(); err != nil {
-		return fmt.Errorf("creating network interface %w", err)
-	}
-
-	defer func() {
-		if retErr != nil {
-			if err := network.IfaceDelete(ports.DeleteIfaceInput{
-				DeviceName: status.HostDeviceName,
-			}); err != nil {
-				retErr = multierror.Append(retErr, err)
-			}
-		}
-	}()
-
-	config, err := CreateConfig(WithMicroVM(vm, status, f.VSockPath(vm)), WithState(vmState))
+	config, err := CreateConfig(WithMicroVM(vm, f.VSockPath(vm)), WithState(vmState))
 	if err != nil {
 		return fmt.Errorf("creating firecracker config: %w", err)
 	}
@@ -183,24 +161,12 @@ func (f *Service) Stop(_ context.Context, vm *models.MicroVM) error {
 		return fmt.Errorf("failed to get PID: %w", err)
 	}
 
-	config, err := vmState.Config()
-	if err != nil {
-		return fmt.Errorf("failed to get config: %w", err)
-	}
-
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return fmt.Errorf("failed to find process with pid %d: %w", pid, err)
 	}
 
 	retErr := proc.Kill()
-
-	iface := config.NetDevices[0].HostDevName
-	if err = network.IfaceDelete(ports.DeleteIfaceInput{
-		DeviceName: iface,
-	}); err != nil {
-		retErr = multierror.Append(retErr, err)
-	}
 
 	if err = vmState.Delete(); err != nil {
 		retErr = multierror.Append(retErr, err)

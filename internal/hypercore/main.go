@@ -22,6 +22,7 @@ func Run() {
 		},
 	}
 
+	cmd.AddCommand(ClusterCommand(cfg))
 	cmd.AddCommand(AttachCommand(cfg))
 	cmd.AddCommand(ListCommand(cfg))
 	cmd.AddCommand(SpawnCommand(cfg))
