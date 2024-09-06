@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ClusterService_Spawn_FullMethodName = "/cluster.services.api.ClusterService/Spawn"
+	ClusterService_Spawn_FullMethodName     = "/cluster.services.api.ClusterService/Spawn"
+	ClusterService_NodeState_FullMethodName = "/cluster.services.api.ClusterService/NodeState"
 )
 
 // ClusterServiceClient is the client API for ClusterService service.
@@ -27,6 +28,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ClusterServiceClient interface {
 	Spawn(ctx context.Context, in *VmSpawnRequest, opts ...grpc.CallOption) (*VmSpawnResponse, error)
+	NodeState(ctx context.Context, in *NodeStateRequest, opts ...grpc.CallOption) (*NodesStateResponse, error)
 }
 
 type clusterServiceClient struct {
@@ -47,11 +49,22 @@ func (c *clusterServiceClient) Spawn(ctx context.Context, in *VmSpawnRequest, op
 	return out, nil
 }
 
+func (c *clusterServiceClient) NodeState(ctx context.Context, in *NodeStateRequest, opts ...grpc.CallOption) (*NodesStateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NodesStateResponse)
+	err := c.cc.Invoke(ctx, ClusterService_NodeState_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ClusterServiceServer is the server API for ClusterService service.
 // All implementations must embed UnimplementedClusterServiceServer
 // for forward compatibility.
 type ClusterServiceServer interface {
 	Spawn(context.Context, *VmSpawnRequest) (*VmSpawnResponse, error)
+	NodeState(context.Context, *NodeStateRequest) (*NodesStateResponse, error)
 	mustEmbedUnimplementedClusterServiceServer()
 }
 
@@ -64,6 +77,9 @@ type UnimplementedClusterServiceServer struct{}
 
 func (UnimplementedClusterServiceServer) Spawn(context.Context, *VmSpawnRequest) (*VmSpawnResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Spawn not implemented")
+}
+func (UnimplementedClusterServiceServer) NodeState(context.Context, *NodeStateRequest) (*NodesStateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method NodeState not implemented")
 }
 func (UnimplementedClusterServiceServer) mustEmbedUnimplementedClusterServiceServer() {}
 func (UnimplementedClusterServiceServer) testEmbeddedByValue()                        {}
@@ -104,6 +120,24 @@ func _ClusterService_Spawn_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ClusterService_NodeState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(NodeStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClusterServiceServer).NodeState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ClusterService_NodeState_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClusterServiceServer).NodeState(ctx, req.(*NodeStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ClusterService_ServiceDesc is the grpc.ServiceDesc for ClusterService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -114,6 +148,10 @@ var ClusterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Spawn",
 			Handler:    _ClusterService_Spawn_Handler,
+		},
+		{
+			MethodName: "NodeState",
+			Handler:    _ClusterService_NodeState_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -77,6 +77,10 @@ func NewAgent(bindAddr string, repo *containerd.Repo, logger *log.Logger) (*Agen
 	return agent, nil
 }
 
+func (a *Agent) handleNodeStateRequest() (ret []byte, retErr error) {
+	return nil, nil
+}
+
 func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retErr error) {
 	ctx := context.Background()
 
@@ -230,6 +234,9 @@ func (a *Agent) Handler() {
 				}
 
 				response, err = a.handleSpawnRequest(&payload)
+			case pb.ClusterEvent_NODE_STATE:
+				var _ pb.NodeStateRequest
+				response, err = a.handleNodeStateRequest()
 			case pb.ClusterEvent_ERROR:
 				fallthrough
 			default:
@@ -347,6 +354,48 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error
 	}
 
 	return nil, errors.New("no response received from nodes")
+}
+
+// Request state of all nodes including the VMs running on them
+func (a *Agent) NodeStateRequest() (*pb.NodesStateResponse, error) {
+	payload, err := wrapClusterMessage(pb.ClusterEvent_NODE_STATE, &pb.NodeStateRequest{})
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := a.serf.Query(QueryName, payload, a.serf.DefaultQueryParams())
+	if err != nil {
+		return nil, err
+	}
+
+	stateResp := pb.NodesStateResponse{}
+
+	for response := range query.ResponseCh() {
+		var resp pb.ClusterMessage
+		if err := proto.Unmarshal(response.Payload, &resp); err != nil {
+			return nil, err
+		}
+
+		if resp.GetEvent() == pb.ClusterEvent_ERROR {
+			var errorResp pb.ErrorResponse
+			if err := resp.GetWrappedMessage().UnmarshalTo(&errorResp); err != nil {
+				return nil, err
+			}
+
+			a.logger.Warnf("node returned failure response: %s", errorResp.GetError())
+
+			continue
+		}
+
+		var wrappedResp pb.NodeStateResponse
+		if err := resp.GetWrappedMessage().UnmarshalTo(&wrappedResp); err != nil {
+			return nil, err
+		}
+
+		stateResp.Responses = append(stateResp.Responses, &wrappedResp)
+	}
+
+	return &stateResp, nil
 }
 
 func (a *Agent) Join(addr string) error {
