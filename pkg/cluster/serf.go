@@ -78,7 +78,45 @@ func NewAgent(bindAddr string, repo *containerd.Repo, logger *log.Logger) (*Agen
 }
 
 func (a *Agent) handleNodeStateRequest() (ret []byte, retErr error) {
-	return nil, nil
+	defer func() {
+		if retErr != nil {
+			a.logger.WithError(retErr).Error("handleNodeStateRequest failed")
+			ret, retErr = wrapClusterErrorMessage(retErr.Error())
+		}
+	}()
+
+	ctx := context.Background()
+
+	tasks, err := a.ctrRepo.GetTasks(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get existing tasks to check capacity: %w", err)
+	}
+
+	var resp pb.NodesStateResponse
+
+	for _, task := range tasks {
+		id := task.GetID()
+		container, err := a.ctrRepo.GetContainer(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get container %s: %w", id, err)
+		}
+		portMap, err := a.serviceProxy.GetPortMap(id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get port map for container %s: %w", id, err)
+		}
+		resp.Responses = append(resp.Responses, &pb.NodeStateResponse{
+			Id:       id,
+			ImageRef: container.Image,
+			Ports:    portMap,
+		})
+	}
+
+	response, err := wrapClusterMessage(pb.ClusterEvent_NODE_STATE, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to wrap cluster message: %w", err)
+	}
+
+	return response, nil
 }
 
 func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retErr error) {
@@ -387,12 +425,12 @@ func (a *Agent) NodeStateRequest() (*pb.NodesStateResponse, error) {
 			continue
 		}
 
-		var wrappedResp pb.NodeStateResponse
+		var wrappedResp pb.NodesStateResponse
 		if err := resp.GetWrappedMessage().UnmarshalTo(&wrappedResp); err != nil {
 			return nil, err
 		}
 
-		stateResp.Responses = append(stateResp.Responses, &wrappedResp)
+		stateResp.Responses = append(stateResp.Responses, wrappedResp.GetResponses()...)
 	}
 
 	return &stateResp, nil

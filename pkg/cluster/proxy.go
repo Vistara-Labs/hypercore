@@ -1,25 +1,30 @@
 package cluster
 
 import (
+	"fmt"
 	"io"
 	"net"
+	"strconv"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 )
 
-type ProxyConn struct {
-	listener net.Listener
+type Proxy struct {
+	hostPort   uint32
+	mappedPort uint32
+	proxyConn  net.Listener
 }
 
 type ServiceProxy struct {
-	logger              *log.Logger
-	containerToProxyMap map[string]ProxyConn
+	logger                *log.Logger
+	containerIDToProxyMap map[string][]Proxy
 }
 
 func NewServiceProxy(logger *log.Logger) (*ServiceProxy, error) {
 	return &ServiceProxy{
-		logger:              logger,
-		containerToProxyMap: make(map[string]ProxyConn),
+		logger:                logger,
+		containerIDToProxyMap: make(map[string][]Proxy),
 	}, nil
 }
 
@@ -42,13 +47,40 @@ func (s *ServiceProxy) proxyConns(client, server net.Conn) {
 	cp(server, client)
 }
 
+func (s *ServiceProxy) GetPortMap(containerID string) (map[uint32]uint32, error) {
+	proxies, ok := s.containerIDToProxyMap[containerID]
+	if !ok {
+		return nil, fmt.Errorf("no proxy found for container %s", containerID)
+	}
+
+	portMap := make(map[uint32]uint32)
+	for _, proxy := range proxies {
+		portMap[proxy.hostPort] = proxy.mappedPort
+	}
+
+	return portMap, nil
+}
+
 func (s *ServiceProxy) Register(containerID, containerAddr string) (int, error) {
 	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
 		return 0, err
 	}
 
-	s.containerToProxyMap[containerAddr] = ProxyConn{listener: listener}
+	hostPort, err := strconv.ParseUint(strings.Split(containerAddr, ":")[1], 10, 0)
+	if err != nil {
+		return 0, err
+	}
+
+	_, ok := s.containerIDToProxyMap[containerID]
+	if !ok {
+		s.containerIDToProxyMap[containerID] = make([]Proxy, 0)
+	}
+	s.containerIDToProxyMap[containerID] = append(s.containerIDToProxyMap[containerID], Proxy{
+		hostPort:   uint32(hostPort),
+		mappedPort: uint32(listener.Addr().(*net.TCPAddr).Port),
+		proxyConn:  listener,
+	})
 
 	go func() {
 		for {
