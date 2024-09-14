@@ -26,6 +26,11 @@ message ErrorResponse {
     string error = 1;
 }
 
+message Node {
+    string id = 1;
+    string ip = 2;
+}
+
 message VmSpawnRequest {
     uint32 cores = 1;
     uint32 memory = 2;
@@ -37,10 +42,15 @@ message VmSpawnRequest {
 message NodeStateRequest {
 }
 
-message NodeStateResponse {
+message WorkloadState {
     string id = 1;
     string image_ref = 2;
     map<uint32, uint32> ports = 3;
+}
+
+message NodeStateResponse {
+    Node node = 1;
+    repeated WorkloadState workloads = 2;
 }
 
 message NodesStateResponse {

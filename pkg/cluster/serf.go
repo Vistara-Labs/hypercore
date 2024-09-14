@@ -92,7 +92,7 @@ func (a *Agent) handleNodeStateRequest() (ret []byte, retErr error) {
 		return nil, fmt.Errorf("failed to get existing tasks to check capacity: %w", err)
 	}
 
-	var resp pb.NodesStateResponse
+	var resp pb.NodeStateResponse
 
 	for _, task := range tasks {
 		id := task.GetID()
@@ -104,7 +104,7 @@ func (a *Agent) handleNodeStateRequest() (ret []byte, retErr error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to get port map for container %s: %w", id, err)
 		}
-		resp.Responses = append(resp.Responses, &pb.NodeStateResponse{
+		resp.Workloads = append(resp.Workloads, &pb.WorkloadState{
 			Id:       id,
 			ImageRef: container.Image,
 			Ports:    portMap,
@@ -425,15 +425,37 @@ func (a *Agent) NodeStateRequest() (*pb.NodesStateResponse, error) {
 			continue
 		}
 
-		var wrappedResp pb.NodesStateResponse
+		var wrappedResp pb.NodeStateResponse
 		if err := resp.GetWrappedMessage().UnmarshalTo(&wrappedResp); err != nil {
 			return nil, err
 		}
 
-		stateResp.Responses = append(stateResp.Responses, wrappedResp.GetResponses()...)
+		member := a.findMember(response.From)
+		if member == nil {
+			a.logger.Warnf("Got response from %s but did not find it in member list", response.From)
+
+			continue
+		}
+
+		wrappedResp.Node = &pb.Node{
+			Id: member.Name,
+			Ip: member.Addr.String(),
+		}
+
+		stateResp.Responses = append(stateResp.Responses, &wrappedResp)
 	}
 
 	return &stateResp, nil
+}
+
+func (a *Agent) findMember(name string) *serf.Member {
+	for _, member := range a.serf.Members() {
+		if member.Name == name {
+			return &member
+		}
+	}
+
+	return nil
 }
 
 func (a *Agent) Join(addr string) error {
