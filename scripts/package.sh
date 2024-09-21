@@ -1,6 +1,6 @@
 #!/bin/sh
 
-set -eu
+set -euo pipefail
 
 CLOUDHYPERVISOR_URL="https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/v40.0/cloud-hypervisor-static"
 CLOUDHYPERVISOR_SHA256="0010c1dfb81cccae81c3595a4267d226f824d878c86ef06be5dbe63106be4cce"
@@ -16,10 +16,6 @@ CNI_SHA256_FILE="https://github.com/containernetworking/plugins/releases/downloa
 
 RUNC_URL="https://github.com/opencontainers/runc/releases/download/v1.1.14/runc.amd64"
 RUNC_SHA256="a83c0804ebc16826829e7925626c4793da89a9b225bbcc468f2b338ea9f8e8a8"
-
-docker build -t hypercore:latest .
-docker run -v .:/hypercore --rm -i hypercore:latest bash <<EOF
-set -euo pipefail
 
 cd /app
 
@@ -59,4 +55,3 @@ mkdir hypercore
 mv bin/ hypercore/
 
 tar c hypercore | gzip > /hypercore/hypercore.tar.gz
-EOF
