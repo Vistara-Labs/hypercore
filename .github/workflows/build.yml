@@ -25,7 +25,7 @@ jobs:
       - uses: addnab/docker-run-action@v3
         with:
           image: hypercore:latest
-          options: "-v .:/hypercore"
+          options: -v ${{ github.workspace }}:/hypercore
           shell: bash
           run: /hypercore/scripts/package.sh
       - uses: actions/upload-artifact@v4
