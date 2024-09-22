@@ -31,5 +31,5 @@ jobs:
           run: /hypercore/scripts/package.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: hypercore
+          name: hypercore.tar.gz
           path: hypercore.tar.gz
