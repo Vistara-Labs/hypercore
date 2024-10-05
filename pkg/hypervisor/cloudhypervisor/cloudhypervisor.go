@@ -100,8 +100,8 @@ func (c *Service) startMicroVM(vm *models.MicroVM, vmState *State, completionFn 
 		"--net", fmt.Sprintf("tap=%s,mac=%s,ip=%s,mask=%s",
 			"tap0",
 			mac.String(),
-			ip.To4(),
-			ip.DefaultMask().String()),
+			ifaceIP,
+			network.MaskToString(ip.DefaultMask())),
 	}
 
 	stdOutFile, err := c.fs.OpenFile(vmState.StdoutPath(), os.O_WRONLY|os.O_CREATE|os.O_APPEND, defaults.DataFilePerm)

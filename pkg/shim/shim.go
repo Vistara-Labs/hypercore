@@ -283,7 +283,7 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 
 	defer func() {
 		if retErr != nil {
-			log.G(ctx).WithError(err).Error("Create failed, cleaning up VM and cancelling shim")
+			log.G(ctx).WithError(retErr).Error("Create failed, cleaning up VM and cancelling shim")
 
 			if err := s.vmState.vmSvc.Stop(ctx, s.vmState.vm); err != nil {
 				log.G(ctx).WithError(err).Error("failed to stop VM")
@@ -297,7 +297,7 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 	// cloud-hypervisor to create the VSOCK file
 	conn, err := vsock.DialContext(ctx, hypervisorState.vmSvc.VSockPath(s.vmState.vm), VSockPort, vsock.WithDialTimeout(time.Second), vsock.WithLogger(log.G(ctx)))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to dial vsock connection: %w", err)
 	}
 
 	rpcClient := ttrpc.NewClient(conn, ttrpc.WithOnClose(func() { _ = conn.Close() }))
@@ -329,7 +329,7 @@ func (s *HyperShim) Create(ctx context.Context, req *taskAPI.CreateTaskRequest) 
 	res, err := s.taskManager.CreateTask(ctx, req, s.vmState.agentClient, ioConnectorSet)
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create task: %w", err)
 	}
 
 	if err := s.addFIFOs(req.GetID(), "", cio.Config{
@@ -349,7 +349,8 @@ func (s *HyperShim) Start(ctx context.Context, req *taskAPI.StartRequest) (*task
 }
 
 func (s *HyperShim) Delete(ctx context.Context, req *taskAPI.DeleteRequest) (*taskAPI.DeleteResponse, error) {
-	if s.vmState != nil {
+	log.G(ctx).Error(s.stateRoot)
+	if s.vmState != nil && s.vmState.agentClient != nil {
 		return s.taskManager.DeleteProcess(ctx, req, s.vmState.agentClient)
 	}
 
@@ -430,13 +431,16 @@ func (s *HyperShim) Connect(ctx context.Context, req *taskAPI.ConnectRequest) (*
 
 func (s *HyperShim) Shutdown(ctx context.Context, req *taskAPI.ShutdownRequest) (*emptypb.Empty, error) {
 	// vmState being non-nil means that the VM was started
+	//nolint:nestif
 	if s.taskManager.ShutdownIfEmpty() && s.vmState != nil {
-		_, err := s.vmState.agentClient.Shutdown(ctx, req)
+		if s.vmState.agentClient != nil {
+			_, err := s.vmState.agentClient.Shutdown(ctx, req)
 
-		if err != nil {
-			log.G(ctx).WithError(err).Error("failed to shutdown via agent, force killing VM")
-		} else {
-			<-s.vmState.vmStopped
+			if err != nil {
+				log.G(ctx).WithError(err).Error("failed to shutdown via agent, force killing VM")
+			} else {
+				<-s.vmState.vmStopped
+			}
 		}
 
 		if err := s.vmState.vmSvc.Stop(ctx, s.vmState.vm); err != nil {
