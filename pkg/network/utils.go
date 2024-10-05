@@ -3,7 +3,21 @@ package network
 import (
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 )
+
+func MaskToString(mask net.IPMask) string {
+	builder := strings.Builder{}
+	for idx, octet := range mask {
+		if idx > 0 {
+			builder.WriteString(".")
+		}
+		builder.WriteString(strconv.Itoa(int(octet)))
+	}
+
+	return builder.String()
+}
 
 func GetLinkMacIP(linkName string) (net.HardwareAddr, net.IP, error) {
 	link, err := net.InterfaceByName(linkName)
@@ -18,8 +32,8 @@ func GetLinkMacIP(linkName string) (net.HardwareAddr, net.IP, error) {
 
 	for _, addr := range addrs {
 		ip, ok := addr.(*net.IPNet)
-		if ok {
-			return link.HardwareAddr, ip.IP, nil
+		if ok && ip.IP.To4() != nil {
+			return link.HardwareAddr, ip.IP.To4(), nil
 		}
 	}
 

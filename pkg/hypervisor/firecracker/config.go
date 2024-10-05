@@ -70,13 +70,13 @@ func WithMicroVM(vm *models.MicroVM, vsockPath string) ConfigOption {
 			UDSPath:  vsockPath,
 		}
 
-		ifaceIP := ip.To4().String()
+		ifaceIP := ip.String()
 		// 192.168.127.X -> 192.168.127.1
 		ip[3] = 1
-		routeIP := ip.To4().String()
+		routeIP := ip.String()
 
 		kernelCmdLine := DefaultKernelCmdLine()
-		kernelCmdLine.Set("ip", fmt.Sprintf("%s::%s:%s::eth0::%s", ifaceIP, routeIP, ip.DefaultMask().String(), "1.1.1.1"))
+		kernelCmdLine.Set("ip", fmt.Sprintf("%s::%s:%s::eth0::%s", ifaceIP, routeIP, network.MaskToString(ip.DefaultMask()), "1.1.1.1"))
 		kernelArgs := kernelCmdLine.String()
 
 		bootSourceConfig := BootSourceConfig{
