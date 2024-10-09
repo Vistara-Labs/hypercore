@@ -312,7 +312,7 @@ func SpawnCommand(cfg *Config) *cobra.Command {
 			case "cloudhypervisor":
 				id, err = repo.CreateContainer(cmd.Context(), containerd.CreateContainerOpts{
 					ImageRef:    hacConfig.Hardware.Ref,
-					Snapshotter: "blockfile",
+					Snapshotter: "devmapper",
 					Runtime: struct {
 						Name    string
 						Options interface{}

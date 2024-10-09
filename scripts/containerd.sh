@@ -10,15 +10,41 @@ CONTAINERD_SOCK="$HYPERCORE_BASE/containerd.sock"
 # State is ephemeral
 CONTAINERD_STATE="/run/hypercore/containerd"
 
-SNAPSHOTTER_ROOT="$HYPERCORE_BASE/snapshotter"
-SNAPSHOTTER_SCRATCH="$HYPERCORE_BASE/blockfile"
+POOL_NAME="hypercore-dev-thinpool"
+DEVMAPPER_ROOT_PATH="$HYPERCORE_BASE/devmapper"
 
-mkdir -p "$HYPERCORE_BASE"
+mkdir -p "$DEVMAPPER_ROOT_PATH"
 
-if [ ! -f "$SNAPSHOTTER_SCRATCH" ]; then
-	dd if=/dev/zero of="$SNAPSHOTTER_SCRATCH" bs=1M count=500
-	mkfs.ext4 "$SNAPSHOTTER_SCRATCH"
+if [ ! -f "$DEVMAPPER_ROOT_PATH/data" ]; then
+	: >"$DEVMAPPER_ROOT_PATH/data"
+	truncate -s 512MB "$DEVMAPPER_ROOT_PATH/data"
 fi
+
+if [ -f "$DEVMAPPER_ROOT_PATH/metadata" ]; then
+	: >"$DEVMAPPER_ROOT_PATH/metadata"
+	truncate -s 1G "$DEVMAPPER_ROOT_PATH/metadata"
+fi
+
+find_dev() {
+	_dev="$(losetup --output NAME --noheadings --associated "$1")"
+	if [ -z "$_dev" ]; then
+		_dev="$(losetup --find --show "$1")"
+	fi
+	echo "$_dev"
+}
+
+DATADEV="$(find_dev "$DEVMAPPER_ROOT_PATH/data")"
+METADEV="$(find_dev "$DEVMAPPER_ROOT_PATH/metadata")"
+
+SECTORSIZE=512
+DATASIZE="$(blockdev --getsize64 -q "$DATADEV")"
+LENGTH_SECTORS="$(echo "$DATASIZE/$SECTORSIZE" | bc)"
+DATA_BLOCK_SIZE=128
+LOW_WATER_MARK=32768
+THINP_TABLE="0 $LENGTH_SECTORS thin-pool $METADEV $DATADEV $DATA_BLOCK_SIZE $LOW_WATER_MARK 1 skip_block_zeroing"
+
+dmsetup reload "$POOL_NAME" --table "$THINP_TABLE" ||
+	dmsetup create "$POOL_NAME" --table "$THINP_TABLE"
 
 exec containerd --root "$CONTAINERD_ROOT" --state "$CONTAINERD_STATE" --config /dev/stdin <<EOF
 version = 2
@@ -27,10 +53,8 @@ version = 2
 address = "$CONTAINERD_SOCK"
 
 [plugins]
-  [plugins.'io.containerd.snapshotter.v1.blockfile']
-    scratch_file = "$SNAPSHOTTER_SCRATCH"
-    root_path = "$SNAPSHOTTER_ROOT"
-    fs_type = 'ext4'
-    mount_options = []
-    recreate_scratch = true
+  [plugins.'io.containerd.snapshotter.v1.devmapper']
+    pool_name = "$POOL_NAME"
+    base_image_size = "512MB"
+    root_path = "$DEVMAPPER_ROOT_PATH"
 EOF

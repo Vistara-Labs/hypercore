@@ -179,20 +179,9 @@ func (r *Repo) GetContainer(ctx context.Context, id string) (containers.Containe
 func (r *Repo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_ string, retErr error) {
 	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
 
-	image, err := r.client.Pull(namespaceCtx, opts.ImageRef)
+	image, err := r.client.Pull(namespaceCtx, opts.ImageRef, containerd.WithPullUnpack, containerd.WithPullSnapshotter(opts.Snapshotter))
 	if err != nil {
 		return "", fmt.Errorf("failed to pull image %s: %w", opts.ImageRef, err)
-	}
-
-	unpacked, err := image.IsUnpacked(namespaceCtx, opts.Snapshotter)
-	if err != nil {
-		return "", fmt.Errorf("failed to check image unpack status: %w", err)
-	}
-
-	if !unpacked {
-		if err := image.Unpack(namespaceCtx, opts.Snapshotter); err != nil {
-			return "", fmt.Errorf("failed to unpack image with snapshotter %s: %w", opts.Snapshotter, err)
-		}
 	}
 
 	// We don't want the context stored internally to get cancelled
