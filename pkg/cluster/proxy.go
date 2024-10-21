@@ -4,47 +4,45 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
 )
 
-type Proxy struct {
-	hostPort   uint32
-	mappedPort uint32
-	proxyConn  net.Listener
-}
-
 type ServiceProxy struct {
-	logger                *log.Logger
-	containerIDToProxyMap map[string][]Proxy
+	mu                *sync.Mutex
+	logger            *log.Logger
+	proxiedPortMap    map[uint32]struct{}
+	serviceIdPortMaps map[string]map[uint32]string
 }
 
 func NewServiceProxy(logger *log.Logger) (*ServiceProxy, error) {
 	return &ServiceProxy{
-		logger:                logger,
-		containerIDToProxyMap: make(map[string][]Proxy),
+		logger:            logger,
+		proxiedPortMap:    make(map[uint32]struct{}),
+		serviceIdPortMaps: make(map[string]map[uint32]string),
 	}, nil
 }
 
-func (s *ServiceProxy) proxyConns(client, server net.Conn) {
+func (s *ServiceProxy) proxyConns(body io.Reader, server net.Conn, writer io.Writer) {
 	errChan := make(chan<- struct{}, 1)
-	cp := func(dst, src net.Conn) {
+	cp := func(dst io.Writer, src io.Reader) {
 		_, err := io.Copy(dst, src)
 		// The connection that breaks first can do the error handling and
 		// close both of them
 		select {
 		case errChan <- struct{}{}:
-			s.logger.WithError(err).Errorf("disconnected from %s", client.RemoteAddr())
-			client.Close()
+			s.logger.WithError(err).Errorf("disconnected from %s", server.LocalAddr())
 			server.Close()
 		default:
 		}
 	}
 
-	go cp(client, server)
-	cp(server, client)
+	go cp(server, body)
+	cp(writer, server)
 }
 
 func (s *ServiceProxy) GetPortMap(containerID string) (map[uint32]uint32, error) {
@@ -61,48 +59,58 @@ func (s *ServiceProxy) GetPortMap(containerID string) (map[uint32]uint32, error)
 	return portMap, nil
 }
 
-func (s *ServiceProxy) Register(containerID, containerAddr string) (int, error) {
-	listener, err := net.Listen("tcp", ":0")
-	if err != nil {
-		return 0, err
+func (s *ServiceProxy) Register(hostPort uint32, containerID, containerAddr string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.proxiedPortMap[hostPort]; ok {
+		if _, ok := s.serviceIdPortMaps[containerID]; !ok {
+			s.serviceIdPortMaps[containerID] = make(map[uint32]string)
+		}
+		s.serviceIdPortMaps[containerID][hostPort] = containerAddr
+		return nil
 	}
 
-	hostPort, err := strconv.ParseUint(strings.Split(containerAddr, ":")[1], 10, 0)
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", hostPort))
 	if err != nil {
-		return 0, err
+		return fmt.Errorf("failed to listen on port %d: %w", hostPort, err)
 	}
 
-	_, ok := s.containerIDToProxyMap[containerID]
-	if !ok {
-		s.containerIDToProxyMap[containerID] = make([]Proxy, 0)
-	}
-	s.containerIDToProxyMap[containerID] = append(s.containerIDToProxyMap[containerID], Proxy{
-		hostPort:   uint32(hostPort),
-		mappedPort: uint32(listener.Addr().(*net.TCPAddr).Port),
-		proxyConn:  listener,
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		split := strings.Split(r.Host, ".")
+		if len(split) < 2 {
+			s.logger.Warnf("bad host header: %s", r.Host)
+			return
+		}
+		if portMap, ok := s.serviceIdPortMaps[split[0]]; ok {
+			if containerAddr, ok := portMap[80]; ok {
+				serverConn, err := net.Dial("tcp", containerAddr)
+				if err != nil {
+					s.logger.WithError(err).Errorf("failed to dial container %s at %st", split[0], containerAddr)
+					return
+				}
+
+				go s.proxyConns(r.Body, serverConn, w)
+			} else {
+				s.logger.Warnf("no port mapped for %d for service %s", 80, split[0])
+			}
+		} else {
+			s.logger.Warnf("no service found for identifier: %s", split[0])
+		}
 	})
 
 	go func() {
-		for {
-			clientConn, err := listener.Accept()
-			if err != nil {
-				s.logger.WithError(err).Error("failed to accept connection")
+		defer func() {
+			s.mu.Lock()
+			_ = listener.Close()
+			delete(s.proxiedPortMap, hostPort)
+			s.mu.Unlock()
+		}()
 
-				break
-			}
-
-			serverConn, err := net.Dial("tcp", containerAddr)
-			if err != nil {
-				s.logger.WithError(err).Errorf("failed to dial container %s at %s for client %s", containerID, containerAddr, clientConn.RemoteAddr())
-				clientConn.Close()
-
-				continue
-			}
-
-			s.logger.Infof("accepted client connection %s to proxy to container %s at %s", clientConn.RemoteAddr(), containerID, containerAddr)
-			go s.proxyConns(clientConn, serverConn)
+		if err := http.Serve(listener, nil); err != nil {
+			s.logger.WithError(err).Error("failed to serve HTTP at port %d", hostPort)
 		}
 	}()
 
-	return listener.Addr().(*net.TCPAddr).Port, nil
+	return nil
 }
