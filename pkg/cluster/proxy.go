@@ -77,12 +77,12 @@ func (s *ServiceProxy) Register(hostPort uint32, containerID, containerAddr stri
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, ok := s.proxiedPortMap[hostPort]; ok {
-		if _, ok := s.serviceIDPortMaps[containerID]; !ok {
-			s.serviceIDPortMaps[containerID] = make(map[uint32]string)
-		}
-		s.serviceIDPortMaps[containerID][hostPort] = containerAddr
+	if _, ok := s.serviceIDPortMaps[containerID]; !ok {
+		s.serviceIDPortMaps[containerID] = make(map[uint32]string)
+	}
+	s.serviceIDPortMaps[containerID][hostPort] = containerAddr
 
+	if _, ok := s.proxiedPortMap[hostPort]; ok {
 		return nil
 	}
 
@@ -91,6 +91,7 @@ func (s *ServiceProxy) Register(hostPort uint32, containerID, containerAddr stri
 		return fmt.Errorf("failed to listen on port %d: %w", hostPort, err)
 	}
 
+	s.proxiedPortMap[hostPort] = struct{}{}
 	go func() {
 		defer func() {
 			s.mu.Lock()
