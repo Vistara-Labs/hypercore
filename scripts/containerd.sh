@@ -20,7 +20,7 @@ if [ ! -f "$DEVMAPPER_ROOT_PATH/data" ]; then
 	truncate -s 512MB "$DEVMAPPER_ROOT_PATH/data"
 fi
 
-if [ -f "$DEVMAPPER_ROOT_PATH/metadata" ]; then
+if [ ! -f "$DEVMAPPER_ROOT_PATH/metadata" ]; then
 	: >"$DEVMAPPER_ROOT_PATH/metadata"
 	truncate -s 1G "$DEVMAPPER_ROOT_PATH/metadata"
 fi
