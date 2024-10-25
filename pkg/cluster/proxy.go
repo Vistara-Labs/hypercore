@@ -21,6 +21,7 @@ type ServiceProxy struct {
 func NewServiceProxy(logger *log.Logger) (*ServiceProxy, error) {
 	s := &ServiceProxy{
 		logger:            logger,
+		mu:                &sync.Mutex{},
 		proxiedPortMap:    make(map[uint32]struct{}),
 		serviceIDPortMaps: make(map[string]map[uint32]string),
 	}
