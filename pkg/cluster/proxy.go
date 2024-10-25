@@ -5,7 +5,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -16,15 +15,43 @@ type ServiceProxy struct {
 	mu                *sync.Mutex
 	logger            *log.Logger
 	proxiedPortMap    map[uint32]struct{}
-	serviceIdPortMaps map[string]map[uint32]string
+	serviceIDPortMaps map[string]map[uint32]string
 }
 
 func NewServiceProxy(logger *log.Logger) (*ServiceProxy, error) {
-	return &ServiceProxy{
+	s := &ServiceProxy{
 		logger:            logger,
 		proxiedPortMap:    make(map[uint32]struct{}),
-		serviceIdPortMaps: make(map[string]map[uint32]string),
-	}, nil
+		serviceIDPortMaps: make(map[string]map[uint32]string),
+	}
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		split := strings.Split(r.Host, ".")
+		if len(split) < 2 {
+			s.logger.Warnf("bad host header: %s", r.Host)
+
+			return
+		}
+		//nolint:nestif
+		if portMap, ok := s.serviceIDPortMaps[split[0]]; ok {
+			if containerAddr, ok := portMap[80]; ok {
+				serverConn, err := net.Dial("tcp", containerAddr)
+				if err != nil {
+					s.logger.WithError(err).Errorf("failed to dial container %s at %s", split[0], containerAddr)
+
+					return
+				}
+
+				go s.proxyConns(r.Body, serverConn, w)
+			} else {
+				s.logger.Warnf("no port mapped for %d for service %s", 80, split[0])
+			}
+		} else {
+			s.logger.Warnf("no service found for identifier: %s", split[0])
+		}
+	})
+
+	return s, nil
 }
 
 func (s *ServiceProxy) proxyConns(body io.Reader, server net.Conn, writer io.Writer) {
@@ -45,29 +72,16 @@ func (s *ServiceProxy) proxyConns(body io.Reader, server net.Conn, writer io.Wri
 	cp(writer, server)
 }
 
-func (s *ServiceProxy) GetPortMap(containerID string) (map[uint32]uint32, error) {
-	proxies, ok := s.containerIDToProxyMap[containerID]
-	if !ok {
-		return nil, fmt.Errorf("no proxy found for container %s", containerID)
-	}
-
-	portMap := make(map[uint32]uint32)
-	for _, proxy := range proxies {
-		portMap[proxy.hostPort] = proxy.mappedPort
-	}
-
-	return portMap, nil
-}
-
 func (s *ServiceProxy) Register(hostPort uint32, containerID, containerAddr string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if _, ok := s.proxiedPortMap[hostPort]; ok {
-		if _, ok := s.serviceIdPortMaps[containerID]; !ok {
-			s.serviceIdPortMaps[containerID] = make(map[uint32]string)
+		if _, ok := s.serviceIDPortMaps[containerID]; !ok {
+			s.serviceIDPortMaps[containerID] = make(map[uint32]string)
 		}
-		s.serviceIdPortMaps[containerID][hostPort] = containerAddr
+		s.serviceIDPortMaps[containerID][hostPort] = containerAddr
+
 		return nil
 	}
 
@@ -75,29 +89,6 @@ func (s *ServiceProxy) Register(hostPort uint32, containerID, containerAddr stri
 	if err != nil {
 		return fmt.Errorf("failed to listen on port %d: %w", hostPort, err)
 	}
-
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		split := strings.Split(r.Host, ".")
-		if len(split) < 2 {
-			s.logger.Warnf("bad host header: %s", r.Host)
-			return
-		}
-		if portMap, ok := s.serviceIdPortMaps[split[0]]; ok {
-			if containerAddr, ok := portMap[80]; ok {
-				serverConn, err := net.Dial("tcp", containerAddr)
-				if err != nil {
-					s.logger.WithError(err).Errorf("failed to dial container %s at %st", split[0], containerAddr)
-					return
-				}
-
-				go s.proxyConns(r.Body, serverConn, w)
-			} else {
-				s.logger.Warnf("no port mapped for %d for service %s", 80, split[0])
-			}
-		} else {
-			s.logger.Warnf("no service found for identifier: %s", split[0])
-		}
-	})
 
 	go func() {
 		defer func() {
@@ -108,7 +99,7 @@ func (s *ServiceProxy) Register(hostPort uint32, containerID, containerAddr stri
 		}()
 
 		if err := http.Serve(listener, nil); err != nil {
-			s.logger.WithError(err).Error("failed to serve HTTP at port %d", hostPort)
+			s.logger.WithError(err).Errorf("failed to serve HTTP at port %d", hostPort)
 		}
 	}()
 

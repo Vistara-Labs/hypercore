@@ -100,14 +100,9 @@ func (a *Agent) handleNodeStateRequest() (ret []byte, retErr error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to get container %s: %w", id, err)
 		}
-		portMap, err := a.serviceProxy.GetPortMap(id)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get port map for container %s: %w", id, err)
-		}
 		resp.Workloads = append(resp.Workloads, &pb.WorkloadState{
 			Id:       id,
 			ImageRef: container.Image,
-			Ports:    portMap,
 		})
 	}
 
@@ -219,13 +214,10 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 
 	portMap := make(map[uint32]uint32)
 
-	for _, port := range payload.GetPorts() {
-		addr := fmt.Sprintf("%s:%d", ip, port)
-		mappedPort, err := a.serviceProxy.Register(id, addr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to register container %s addr %s with proxy: %w", id, addr, err)
-		}
-		portMap[port] = uint32(mappedPort)
+	addr := fmt.Sprintf("%s:%d", ip, payload.GetPorts()[0])
+
+	if err := a.serviceProxy.Register(80, id, addr); err != nil {
+		return nil, fmt.Errorf("failed to register container %s addr %s with proxy: %w", id, addr, err)
 	}
 
 	response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{Id: id, Ports: portMap})
