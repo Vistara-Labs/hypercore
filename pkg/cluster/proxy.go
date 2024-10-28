@@ -2,9 +2,10 @@ package cluster
 
 import (
 	"fmt"
-	"io"
 	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -36,14 +37,15 @@ func NewServiceProxy(logger *log.Logger) (*ServiceProxy, error) {
 		//nolint:nestif
 		if portMap, ok := s.serviceIDPortMaps[split[0]]; ok {
 			if containerAddr, ok := portMap[80]; ok {
-				serverConn, err := net.Dial("tcp", containerAddr)
-				if err != nil {
-					s.logger.WithError(err).Errorf("failed to dial container %s at %s", split[0], containerAddr)
+				s.logger.Infof("got address %s for service at host %s", containerAddr, r.Host)
 
-					return
+				proxiedURL, err := url.Parse("http://" + containerAddr)
+				if err != nil {
+					// this should not happen
+					panic(fmt.Errorf("failed to parse container address %s: %w", containerAddr, err))
 				}
 
-				go s.proxyConns(r.Body, serverConn, w)
+				httputil.NewSingleHostReverseProxy(proxiedURL).ServeHTTP(w, r)
 			} else {
 				s.logger.Warnf("no port mapped for %d for service %s", 80, split[0])
 			}
@@ -55,24 +57,6 @@ func NewServiceProxy(logger *log.Logger) (*ServiceProxy, error) {
 	return s, nil
 }
 
-func (s *ServiceProxy) proxyConns(body io.Reader, server net.Conn, writer io.Writer) {
-	errChan := make(chan<- struct{}, 1)
-	cp := func(dst io.Writer, src io.Reader) {
-		_, err := io.Copy(dst, src)
-		// The connection that breaks first can do the error handling and
-		// close both of them
-		select {
-		case errChan <- struct{}{}:
-			s.logger.WithError(err).Errorf("disconnected from %s", server.LocalAddr())
-			server.Close()
-		default:
-		}
-	}
-
-	go cp(server, body)
-	cp(writer, server)
-}
-
 func (s *ServiceProxy) Register(hostPort uint32, containerID, containerAddr string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -82,9 +66,13 @@ func (s *ServiceProxy) Register(hostPort uint32, containerID, containerAddr stri
 	}
 	s.serviceIDPortMaps[containerID][hostPort] = containerAddr
 
+	s.logger.Infof("Exposed container ID %s Address %s at host port %d", containerID, containerAddr, hostPort)
+
 	if _, ok := s.proxiedPortMap[hostPort]; ok {
 		return nil
 	}
+
+	s.logger.Infof("Listening on host port: %d", hostPort)
 
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", hostPort))
 	if err != nil {
