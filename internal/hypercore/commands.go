@@ -3,6 +3,7 @@ package hypercore
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -87,13 +88,24 @@ func ClusterSpawnCommand(cfg *Config) *cobra.Command {
 			return nil
 		},
 		RunE: func(_ *cobra.Command, _ []string) error {
-			ports := make([]uint32, 0)
-			for _, port := range strings.Split(cfg.ClusterSpawn.Ports, ",") {
-				parsed, err := strconv.ParseUint(port, 10, 0)
+			ports := map[uint32]uint32{}
+			for _, portMap := range strings.Split(cfg.ClusterSpawn.Ports, ",") {
+				hostToContainer := strings.Split(portMap, ":")
+				if len(hostToContainer) != 2 {
+					return fmt.Errorf("invalid port mapping: %s", portMap)
+				}
+
+				hostPort, err := strconv.Atoi(hostToContainer[0])
 				if err != nil {
 					return err
 				}
-				ports = append(ports, uint32(parsed))
+
+				containerPort, err := strconv.Atoi(hostToContainer[1])
+				if err != nil {
+					return err
+				}
+
+				ports[uint32(hostPort)] = ports[uint32(containerPort)]
 			}
 
 			conn, err := grpc.NewClient(cfg.GrpcBindAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -175,7 +187,16 @@ func ClusterCommand(cfg *Config) *cobra.Command {
 				return err
 			}
 
-			agent, err := cluster.NewAgent(cfg.ClusterBindAddr, repo, logger)
+			var tlsConfig *cluster.TLSConfig
+
+			if cfg.ClusterTLSKey != "" && cfg.ClusterTLSCert != "" {
+				tlsConfig = &cluster.TLSConfig{
+					CertFile: cfg.ClusterTLSCert,
+					KeyFile:  cfg.ClusterTLSKey,
+				}
+			}
+
+			agent, err := cluster.NewAgent(logger, cfg.ClusterBaseURL, cfg.ClusterBindAddr, repo, tlsConfig)
 			if err != nil {
 				return err
 			}

@@ -6,6 +6,9 @@ type Config struct {
 	DefaultVMProvider string
 	HACFile           string
 	ClusterBindAddr   string
+	ClusterBaseURL    string
+	ClusterTLSCert    string
+	ClusterTLSKey     string
 	GrpcBindAddr      string
 	ClusterSpawn      struct {
 		CPU      int

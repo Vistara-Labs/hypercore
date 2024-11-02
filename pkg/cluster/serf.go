@@ -31,13 +31,14 @@ type Agent struct {
 	ctrRepo      *containerd.Repo
 	cfg          *serf.Config
 	serf         *serf.Serf
+	baseURL      string
 	logger       *log.Logger
 }
 
-func NewAgent(bindAddr string, repo *containerd.Repo, logger *log.Logger) (*Agent, error) {
+func NewAgent(logger *log.Logger, baseURL, bindAddr string, repo *containerd.Repo, tlsConfig *TLSConfig) (*Agent, error) {
 	eventCh := make(chan serf.Event, 64)
 
-	serviceProxy, err := NewServiceProxy(logger)
+	serviceProxy, err := NewServiceProxy(logger, tlsConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -68,6 +69,7 @@ func NewAgent(bindAddr string, repo *containerd.Repo, logger *log.Logger) (*Agen
 	agent := &Agent{
 		eventCh:      eventCh,
 		cfg:          cfg,
+		baseURL:      baseURL,
 		serviceProxy: serviceProxy,
 		serf:         serf,
 		logger:       logger,
@@ -212,15 +214,14 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 		return nil, fmt.Errorf("failed to get IP for container %s", id)
 	}
 
-	portMap := make(map[uint32]uint32)
-
-	addr := fmt.Sprintf("%s:%d", ip, payload.GetPorts()[0])
-
-	if err := a.serviceProxy.Register(80, id, addr); err != nil {
-		return nil, fmt.Errorf("failed to register container %s addr %s with proxy: %w", id, addr, err)
+	for port := range payload.GetPorts() {
+		addr := fmt.Sprintf("%s:%d", ip, port)
+		if err := a.serviceProxy.Register(port, id, addr); err != nil {
+			return nil, fmt.Errorf("failed to register container %s addr %s with proxy: %w", id, addr, err)
+		}
 	}
 
-	response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{Id: id, Ports: portMap})
+	response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{Id: id, Url: id + "." + a.baseURL})
 	if err != nil {
 		return nil, fmt.Errorf("failed to wrap cluster message: %w", err)
 	}
