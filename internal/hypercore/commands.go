@@ -105,7 +105,7 @@ func ClusterSpawnCommand(cfg *Config) *cobra.Command {
 					return err
 				}
 
-				ports[uint32(hostPort)] = ports[uint32(containerPort)]
+				ports[uint32(hostPort)] = uint32(containerPort)
 			}
 
 			conn, err := grpc.NewClient(cfg.GrpcBindAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
