@@ -36,19 +36,19 @@ func NewServiceProxy(logger *log.Logger, tlsConfig *TLSConfig) (*ServiceProxy, e
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		hostPort := strings.Split(r.Host, ":")
-		if len(hostPort) < 2 {
+		addr := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
+		port, err := strconv.Atoi(strings.Split(addr.String(), ":")[1])
+		if err != nil {
+			panic(fmt.Errorf("bad address: %s", addr.String()))
+		}
+
+		splitHost := strings.Split(r.Host, ".")
+		if len(splitHost) < 2 {
 			s.logger.Warnf("bad host header: %s", r.Host)
 
 			return
 		}
-		host := hostPort[0]
-		port, err := strconv.Atoi(hostPort[1])
-		if err != nil {
-			s.logger.WithError(err).Warnf("bad port in host header: %s", r.Host)
-
-			return
-		}
+		host := splitHost[0]
 		s.logger.Infof("Got request for host %s port %d", host, port)
 		//nolint:nestif
 		if portMap, ok := s.serviceIDPortMaps[host]; ok {
