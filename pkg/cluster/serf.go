@@ -214,9 +214,9 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 		return nil, fmt.Errorf("failed to get IP for container %s", id)
 	}
 
-	for port := range payload.GetPorts() {
-		addr := fmt.Sprintf("%s:%d", ip, port)
-		if err := a.serviceProxy.Register(port, id, addr); err != nil {
+	for hostPort, containerPort := range payload.GetPorts() {
+		addr := fmt.Sprintf("%s:%d", ip, containerPort)
+		if err := a.serviceProxy.Register(hostPort, id, addr); err != nil {
 			return nil, fmt.Errorf("failed to register container %s addr %s with proxy: %w", id, addr, err)
 		}
 	}
