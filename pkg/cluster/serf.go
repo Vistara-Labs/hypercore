@@ -347,9 +347,9 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error
 		a.logger.Infof("Successful response from node: %s", response.From)
 
 		params := a.serf.DefaultQueryParams()
-		// Give 30 seconds to the node to pull the image from the network
+		// Give 90 seconds to the node to pull the image from the network
 		// and spawn the VM
-		params.Timeout = time.Second * 30
+		params.Timeout = time.Second * 90
 		// Only send the query to the node that sent the response
 		params.FilterNodes = []string{response.From}
 
