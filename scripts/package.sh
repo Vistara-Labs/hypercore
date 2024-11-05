@@ -19,8 +19,6 @@ RUNC_SHA256="a83c0804ebc16826829e7925626c4793da89a9b225bbcc468f2b338ea9f8e8a8"
 
 cd /app
 
-cp scripts/containerd.sh bin/hypercore-containerd
-
 curl -LO "$CLOUDHYPERVISOR_URL"
 sha256sum --check <<<"$CLOUDHYPERVISOR_SHA256 cloud-hypervisor-static"
 
@@ -55,6 +53,8 @@ mv cni/firewall cni/ptp bin/
 mv /go/bin/tc-redirect-tap bin/
 
 strip --strip-all bin/*
+
+cp scripts/containerd.sh bin/hypercore-containerd
 
 mkdir hypercore
 mv bin/ hypercore/
