@@ -258,7 +258,7 @@ func (r *Repo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_
 		cniPlugins = append(cniPlugins, &libcni.NetworkConfig{Network: &types.NetConf{Type: "tc-redirect-tap"}, Bytes: []byte(tapConfig)})
 	}
 
-	_, err = libcni.NewCNIConfig([]string{"/opt/cni/bin"}, nil).AddNetworkList(
+	_, err = libcni.NewCNIConfig([]string{"/opt/hypercore/bin", "/opt/cni/bin"}, nil).AddNetworkList(
 		namespaceCtx, &libcni.NetworkConfigList{
 			Name:       "hypercore-cni",
 			CNIVersion: "0.4.0",

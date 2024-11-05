@@ -1,6 +1,8 @@
-#!/bin/sh
+#!/bin/bash
 
-set -eu
+set -euo pipefail
+
+export PATH="/opt/hypercore/bin:$PATH"
 
 HYPERCORE_BASE="/var/lib/hypercore"
 
