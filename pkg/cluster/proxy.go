@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -15,28 +16,43 @@ import (
 type ServiceProxy struct {
 	mu                *sync.Mutex
 	logger            *log.Logger
+	tlsConfig         *TLSConfig
 	proxiedPortMap    map[uint32]struct{}
 	serviceIDPortMaps map[string]map[uint32]string
 }
 
-func NewServiceProxy(logger *log.Logger) (*ServiceProxy, error) {
+type TLSConfig struct {
+	CertFile string
+	KeyFile  string
+}
+
+func NewServiceProxy(logger *log.Logger, tlsConfig *TLSConfig) (*ServiceProxy, error) {
 	s := &ServiceProxy{
 		logger:            logger,
+		tlsConfig:         tlsConfig,
 		mu:                &sync.Mutex{},
 		proxiedPortMap:    make(map[uint32]struct{}),
 		serviceIDPortMaps: make(map[string]map[uint32]string),
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		split := strings.Split(r.Host, ".")
-		if len(split) < 2 {
+		addr := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
+		port, err := strconv.Atoi(strings.Split(addr.String(), ":")[1])
+		if err != nil {
+			panic(fmt.Errorf("bad address: %s", addr.String()))
+		}
+
+		splitHost := strings.Split(r.Host, ".")
+		if len(splitHost) < 2 {
 			s.logger.Warnf("bad host header: %s", r.Host)
 
 			return
 		}
+		host := splitHost[0]
+		s.logger.Infof("Got request for host %s port %d", host, port)
 		//nolint:nestif
-		if portMap, ok := s.serviceIDPortMaps[split[0]]; ok {
-			if containerAddr, ok := portMap[80]; ok {
+		if portMap, ok := s.serviceIDPortMaps[host]; ok {
+			if containerAddr, ok := portMap[uint32(port)]; ok {
 				s.logger.Infof("got address %s for service at host %s", containerAddr, r.Host)
 
 				proxiedURL, err := url.Parse("http://" + containerAddr)
@@ -45,12 +61,13 @@ func NewServiceProxy(logger *log.Logger) (*ServiceProxy, error) {
 					panic(fmt.Errorf("failed to parse container address %s: %w", containerAddr, err))
 				}
 
+				// TODO construct once per URL
 				httputil.NewSingleHostReverseProxy(proxiedURL).ServeHTTP(w, r)
 			} else {
-				s.logger.Warnf("no port mapped for %d for service %s", 80, split[0])
+				s.logger.Warnf("no port mapped for %d for service %s", port, host)
 			}
 		} else {
-			s.logger.Warnf("no service found for identifier: %s", split[0])
+			s.logger.Warnf("no service found for identifier: %s", host)
 		}
 	})
 
@@ -88,8 +105,14 @@ func (s *ServiceProxy) Register(hostPort uint32, containerID, containerAddr stri
 			s.mu.Unlock()
 		}()
 
-		if err := http.Serve(listener, nil); err != nil {
-			s.logger.WithError(err).Errorf("failed to serve HTTP at port %d", hostPort)
+		if s.tlsConfig != nil {
+			if err := http.ServeTLS(listener, nil, s.tlsConfig.CertFile, s.tlsConfig.KeyFile); err != nil {
+				s.logger.WithError(err).Errorf("failed to serve HTTP TLS at port %d", hostPort)
+			}
+		} else {
+			if err := http.Serve(listener, nil); err != nil {
+				s.logger.WithError(err).Errorf("failed to serve HTTP at port %d", hostPort)
+			}
 		}
 	}()
 

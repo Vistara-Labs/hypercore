@@ -19,11 +19,13 @@ RUNC_SHA256="a83c0804ebc16826829e7925626c4793da89a9b225bbcc468f2b338ea9f8e8a8"
 
 cd /app
 
+cp scripts/containerd.sh bin/hypercore-containerd
+
 curl -LO "$CLOUDHYPERVISOR_URL"
-sha256sum --check <<< "$CLOUDHYPERVISOR_SHA256 cloud-hypervisor-static"
+sha256sum --check <<<"$CLOUDHYPERVISOR_SHA256 cloud-hypervisor-static"
 
 curl -LO "$RUNC_URL"
-sha256sum --check <<< "$RUNC_SHA256 runc.amd64"
+sha256sum --check <<<"$RUNC_SHA256 runc.amd64"
 
 curl -LO "$FIRECRACKER_URL"
 curl -L "$FIRECRACKER_SHA256_FILE" | sha256sum --check
@@ -34,17 +36,20 @@ curl -L "$CONTAINERD_SHA256_FILE" | sha256sum --check
 curl -LO "$CNI_PLUGINS_URL"
 curl -L "$CNI_SHA256_FILE" | sha256sum --check
 
-mv cloud-hypervisor-static bin/
+chmod +x cloud-hypervisor-static
+mv cloud-hypervisor-static bin/cloud-hypervisor
+
+chmod +x runc.amd64
 mv runc.amd64 bin/runc
 
 tar xf firecracker-v1.8.0-x86_64.tgz
 mv release-v1.8.0-x86_64/firecracker-v1.8.0-x86_64 bin/firecracker
 
-( mkdir -p containerd && cd containerd && tar xf ../containerd-static-1.7.20-linux-amd64.tar.gz --strip-components=1 )
+(mkdir -p containerd && cd containerd && tar xf ../containerd-static-1.7.20-linux-amd64.tar.gz --strip-components=1)
 
 mv containerd/containerd containerd/containerd-shim bin/
 
-( mkdir -p cni && cd cni && tar xf ../cni-plugins-linux-amd64-v1.5.1.tgz )
+(mkdir -p cni && cd cni && tar xf ../cni-plugins-linux-amd64-v1.5.1.tgz)
 
 mv cni/firewall cni/ptp bin/
 mv /go/bin/tc-redirect-tap bin/
@@ -54,4 +59,4 @@ strip --strip-all bin/*
 mkdir hypercore
 mv bin/ hypercore/
 
-tar c hypercore | gzip > /hypercore/hypercore.tar.gz
+tar c hypercore | gzip >/hypercore/hypercore.tar.gz
