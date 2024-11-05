@@ -45,7 +45,7 @@ mv release-v1.8.0-x86_64/firecracker-v1.8.0-x86_64 bin/firecracker
 
 (mkdir -p containerd && cd containerd && tar xf ../containerd-static-1.7.20-linux-amd64.tar.gz --strip-components=1)
 
-mv containerd/containerd containerd/containerd-shim bin/
+mv containerd/containerd containerd/containerd-shim containerd/containerd-shim-runc-v2 bin/
 
 (mkdir -p cni && cd cni && tar xf ../cni-plugins-linux-amd64-v1.5.1.tgz)
 

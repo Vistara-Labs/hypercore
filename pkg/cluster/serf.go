@@ -206,7 +206,7 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 		},
 	})
 	if err != nil {
-		return nil, errors.New("failed to spawn container")
+		return nil, fmt.Errorf("failed to spawn container: %w", err)
 	}
 
 	ip, err := a.ctrRepo.GetContainerPrimaryIP(ctx, id)
