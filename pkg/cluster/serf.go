@@ -230,6 +230,7 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 	return response, nil
 }
 
+//nolint:gocognit
 func (a *Agent) Handler() {
 	for event := range a.eventCh {
 		switch event.EventType() {
@@ -308,6 +309,8 @@ func (a *Agent) Handler() {
 				continue
 			}
 
+			a.logger.Infof("Got workloads of node %s IP %v", workloads.GetNode().GetId(), a.findMember(workloads.GetNode().GetId()).Addr)
+
 			for _, service := range workloads.GetWorkloads() {
 				for _, port := range service.GetPorts() {
 					addr := fmt.Sprintf("%s:%d", member.Addr.String(), port)
@@ -318,8 +321,6 @@ func (a *Agent) Handler() {
 					}
 				}
 			}
-
-			a.logger.Infof("Got workloads of node %s IP %v", workloads.GetNode().GetId(), a.findMember(workloads.GetNode().GetId()).Addr)
 		case serf.EventMemberLeave:
 			fallthrough
 		case serf.EventMemberFailed:
