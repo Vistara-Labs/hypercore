@@ -21,8 +21,9 @@ import (
 )
 
 const (
-	QueryName         = "hypercore_query"
-	SpawnRequestLabel = "hypercore-request-payload"
+	QueryName           = "hypercore_query"
+	SpawnRequestLabel   = "hypercore-request-payload"
+	StateBroadcastEvent = "hypercore_state_broadcast"
 )
 
 type Agent struct {
@@ -75,6 +76,7 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, repo *containerd.Rep
 		logger:       logger,
 		ctrRepo:      repo,
 	}
+	go agent.broadcastWorkloads()
 
 	return agent, nil
 }
@@ -98,13 +100,12 @@ func (a *Agent) handleNodeStateRequest() (ret []byte, retErr error) {
 
 	for _, task := range tasks {
 		id := task.GetID()
-		container, err := a.ctrRepo.GetContainer(ctx, id)
+		_, err := a.ctrRepo.GetContainer(ctx, id)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get container %s: %w", id, err)
 		}
 		resp.Workloads = append(resp.Workloads, &pb.WorkloadState{
-			Id:       id,
-			ImageRef: container.Image,
+			Id: id,
 		})
 	}
 
@@ -285,6 +286,40 @@ func (a *Agent) Handler() {
 			if err := query.Respond(response); err != nil {
 				a.logger.WithError(err).Error("failed to respond to query")
 			}
+		case serf.EventUser:
+			userEvent := event.(serf.UserEvent)
+
+			var workloads pb.NodeStateResponse
+
+			if err := proto.Unmarshal(userEvent.Payload, &workloads); err != nil {
+				a.logger.WithError(err).Error("failed to unmarshal")
+
+				continue
+			}
+
+			if workloads.GetNode().GetId() == a.serf.LocalMember().Name {
+				continue
+			}
+
+			member := a.findMember(workloads.GetNode().GetId())
+			if member == nil {
+				a.logger.Warnf("member for node %s not found", workloads.GetNode().GetId())
+
+				continue
+			}
+
+			for _, service := range workloads.GetWorkloads() {
+				for _, port := range service.GetPorts() {
+					addr := fmt.Sprintf("%s:%d", member.Addr.String(), port)
+					if err := a.serviceProxy.Register(port, service.GetId(), addr); err != nil {
+						a.logger.WithError(err).Errorf("failed to register node %s service %s addr %s with proxy", member.Name, service, addr)
+
+						continue
+					}
+				}
+			}
+
+			a.logger.Infof("Got workloads of node %s IP %v", workloads.GetNode().GetId(), a.findMember(workloads.GetNode().GetId()).Addr)
 		case serf.EventMemberLeave:
 			fallthrough
 		case serf.EventMemberFailed:
@@ -292,8 +327,6 @@ func (a *Agent) Handler() {
 		case serf.EventMemberUpdate:
 			fallthrough
 		case serf.EventMemberReap:
-			fallthrough
-		case serf.EventUser:
 			fallthrough
 		default:
 			a.logger.Infof("Received event: %v", event)
@@ -439,6 +472,37 @@ func (a *Agent) NodeStateRequest() (*pb.NodesStateResponse, error) {
 	}
 
 	return &stateResp, nil
+}
+
+// broadcast the workloads running on the node every 30 seconds
+// so existing nodes can update their state and new nodes can
+// sync up with the current state of the cluster
+func (a *Agent) broadcastWorkloads() {
+	ticker := time.NewTicker(time.Second * 5)
+	for range ticker.C {
+		resp := pb.NodeStateResponse{
+			Node: &pb.Node{
+				Id: a.serf.LocalMember().Name,
+			},
+		}
+		for id, ports := range a.serviceProxy.Services() {
+			resp.Workloads = append(resp.Workloads, &pb.WorkloadState{
+				Id:    id,
+				Ports: ports,
+			})
+		}
+
+		marshaled, err := proto.Marshal(&resp)
+		if err != nil {
+			a.logger.WithError(err).Error("failed to marshal")
+
+			continue
+		}
+
+		if err := a.serf.UserEvent(StateBroadcastEvent, marshaled, true); err != nil {
+			a.logger.WithError(err).Error("failed to broadcast workload state")
+		}
+	}
 }
 
 func (a *Agent) findMember(name string) *serf.Member {

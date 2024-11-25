@@ -118,3 +118,17 @@ func (s *ServiceProxy) Register(hostPort uint32, containerID, containerAddr stri
 
 	return nil
 }
+
+func (s *ServiceProxy) Services() map[string][]uint32 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	services := make(map[string][]uint32)
+	for service, val := range s.serviceIDPortMaps {
+		services[service] = []uint32{}
+		for port := range val {
+			services[service] = append(services[service], port)
+		}
+	}
+
+	return services
+}
