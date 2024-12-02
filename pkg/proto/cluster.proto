@@ -45,7 +45,7 @@ message NodeStateRequest {
 
 message WorkloadState {
     string id = 1;
-    repeated uint32 ports = 2;
+    map<uint32, uint32> ports = 2;
 }
 
 message NodeStateResponse {

@@ -8,6 +8,7 @@ import (
 	"net"
 	"runtime"
 	"strconv"
+	"sync"
 	"time"
 	"vistara-node/pkg/containerd"
 	pb "vistara-node/pkg/proto/cluster"
@@ -24,16 +25,25 @@ const (
 	QueryName           = "hypercore_query"
 	SpawnRequestLabel   = "hypercore-request-payload"
 	StateBroadcastEvent = "hypercore_state_broadcast"
+
+	WORKLOAD_BROADCAST_PERIOD = time.Second * 5
 )
 
+type SavedStatusUpdate struct {
+	update     *pb.NodeStateResponse
+	receivedAt time.Time
+}
+
 type Agent struct {
-	eventCh      chan serf.Event
-	serviceProxy *ServiceProxy
-	ctrRepo      *containerd.Repo
-	cfg          *serf.Config
-	serf         *serf.Serf
-	baseURL      string
-	logger       *log.Logger
+	eventCh         chan serf.Event
+	serviceProxy    *ServiceProxy
+	ctrRepo         *containerd.Repo
+	cfg             *serf.Config
+	serf            *serf.Serf
+	baseURL         string
+	logger          *log.Logger
+	lastStateMu     sync.Mutex
+	lastStateUpdate map[string]SavedStatusUpdate
 }
 
 func NewAgent(logger *log.Logger, baseURL, bindAddr string, repo *containerd.Repo, tlsConfig *TLSConfig) (*Agent, error) {
@@ -68,15 +78,17 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, repo *containerd.Rep
 	}
 
 	agent := &Agent{
-		eventCh:      eventCh,
-		cfg:          cfg,
-		baseURL:      baseURL,
-		serviceProxy: serviceProxy,
-		serf:         serf,
-		logger:       logger,
-		ctrRepo:      repo,
+		eventCh:         eventCh,
+		cfg:             cfg,
+		baseURL:         baseURL,
+		serviceProxy:    serviceProxy,
+		serf:            serf,
+		logger:          logger,
+		ctrRepo:         repo,
+		lastStateUpdate: make(map[string]SavedStatusUpdate),
 	}
 	go agent.broadcastWorkloads()
+	go agent.monitorStateUpdates()
 
 	return agent, nil
 }
@@ -309,7 +321,13 @@ func (a *Agent) Handler() {
 				continue
 			}
 
-			a.logger.Infof("Got workloads of node %s IP %v", workloads.GetNode().GetId(), a.findMember(workloads.GetNode().GetId()).Addr)
+			a.logger.Infof("Got workloads of node %s IP %v", workloads.GetNode().GetId(), member.Addr)
+			a.lastStateMu.Lock()
+			a.lastStateUpdate[member.Name] = SavedStatusUpdate{
+				update:     &workloads,
+				receivedAt: time.Now(),
+			}
+			a.lastStateMu.Unlock()
 
 			for _, service := range workloads.GetWorkloads() {
 				for _, port := range service.GetPorts() {
@@ -479,7 +497,7 @@ func (a *Agent) NodeStateRequest() (*pb.NodesStateResponse, error) {
 // so existing nodes can update their state and new nodes can
 // sync up with the current state of the cluster
 func (a *Agent) broadcastWorkloads() {
-	ticker := time.NewTicker(time.Second * 5)
+	ticker := time.NewTicker(WORKLOAD_BROADCAST_PERIOD)
 	for range ticker.C {
 		resp := pb.NodeStateResponse{
 			Node: &pb.Node{
@@ -503,6 +521,21 @@ func (a *Agent) broadcastWorkloads() {
 		if err := a.serf.UserEvent(StateBroadcastEvent, marshaled, true); err != nil {
 			a.logger.WithError(err).Error("failed to broadcast workload state")
 		}
+	}
+}
+
+func (a *Agent) monitorStateUpdates() {
+	ticker := time.NewTicker(WORKLOAD_BROADCAST_PERIOD)
+	for range ticker.C {
+		a.lastStateMu.Lock()
+		for node, update := range a.lastStateUpdate {
+			if time.Since(update.receivedAt) > (WORKLOAD_BROADCAST_PERIOD * 3) {
+				a.logger.Warnf("Update from node %s last received at %v, re-scheduling workloads", node, update.receivedAt)
+				for _, service := range update.update.GetWorkloads() {
+				}
+			}
+		}
+		a.lastStateMu.Unlock()
 	}
 }
 
