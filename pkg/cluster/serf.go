@@ -10,9 +10,10 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	"vistara-node/pkg/containerd"
+	vcontainerd "vistara-node/pkg/containerd"
 	pb "vistara-node/pkg/proto/cluster"
 
+	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/google/uuid"
 	"github.com/hashicorp/serf/serf"
@@ -37,7 +38,7 @@ type SavedStatusUpdate struct {
 type Agent struct {
 	eventCh         chan serf.Event
 	serviceProxy    *ServiceProxy
-	ctrRepo         *containerd.Repo
+	ctrRepo         *vcontainerd.Repo
 	cfg             *serf.Config
 	serf            *serf.Serf
 	baseURL         string
@@ -46,7 +47,7 @@ type Agent struct {
 	lastStateUpdate map[string]SavedStatusUpdate
 }
 
-func NewAgent(logger *log.Logger, baseURL, bindAddr string, repo *containerd.Repo, tlsConfig *TLSConfig) (*Agent, error) {
+func NewAgent(logger *log.Logger, baseURL, bindAddr string, repo *vcontainerd.Repo, tlsConfig *TLSConfig) (*Agent, error) {
 	eventCh := make(chan serf.Event, 64)
 
 	serviceProxy, err := NewServiceProxy(logger, tlsConfig)
@@ -88,6 +89,7 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, repo *containerd.Rep
 		lastStateUpdate: make(map[string]SavedStatusUpdate),
 	}
 	go agent.broadcastWorkloads()
+	go agent.monitorWorkloads()
 	go agent.monitorStateUpdates()
 
 	return agent, nil
@@ -167,8 +169,13 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 			return nil, fmt.Errorf("failed to get container %s: %w", task.GetID(), err)
 		}
 
+		labels, err := container.Labels(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get labels for container %s: %w", task.GetID(), err)
+		}
+
 		var labelPayload pb.VmSpawnRequest
-		if err := json.Unmarshal([]byte(container.Labels[SpawnRequestLabel]), &labelPayload); err != nil {
+		if err := json.Unmarshal([]byte(labels[SpawnRequestLabel]), &labelPayload); err != nil {
 			return nil, err
 		}
 
@@ -197,7 +204,7 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 		return nil, err
 	}
 
-	id, err := a.ctrRepo.CreateContainer(ctx, containerd.CreateContainerOpts{
+	id, err := a.ctrRepo.CreateContainer(ctx, vcontainerd.CreateContainerOpts{
 		ImageRef:    payload.GetImageRef(),
 		Snapshotter: "",
 		Runtime: struct {
@@ -520,6 +527,48 @@ func (a *Agent) broadcastWorkloads() {
 
 		if err := a.serf.UserEvent(StateBroadcastEvent, marshaled, true); err != nil {
 			a.logger.WithError(err).Error("failed to broadcast workload state")
+		}
+	}
+}
+
+func (a *Agent) monitorWorkloads() {
+	ticker := time.NewTicker(time.Second * 10)
+
+	for range ticker.C {
+		tasks, err := a.ctrRepo.GetTasks(context.Background())
+		if err != nil {
+			a.logger.WithError(err).Error("failed to get tasks")
+			continue
+		}
+
+		for _, task := range tasks {
+			a.logger.Info("Got task %s, state: %s", task.GetID(), task.GetStatus())
+
+			container, err := a.ctrRepo.GetContainer(context.Background(), task.GetID())
+			if err != nil {
+				a.logger.WithError(err).Error("failed to get container for task %s", task.GetID())
+				continue
+			}
+
+			task, err := container.Task(context.Background(), nil)
+			if err != nil {
+				a.logger.WithError(err).Error("failed to get existing task for container %s: %w", task.ID, err)
+				continue
+			}
+
+			status, err := task.Status(context.Background())
+			if err != nil {
+				a.logger.WithError(err).Error("failed to get status for task %s: %w", task.ID, err)
+				continue
+			}
+
+			if status.Status == containerd.Stopped {
+				if err := task.Start(context.Background()); err != nil {
+					a.logger.WithError(err).Error("failed to restart task %s: %w", task.ID, err)
+				} else {
+					a.logger.Info("successfully restarted task %s", task.ID)
+				}
+			}
 		}
 	}
 }
