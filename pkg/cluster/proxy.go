@@ -118,23 +118,3 @@ func (s *ServiceProxy) Register(hostPort uint32, containerID, containerAddr stri
 
 	return nil
 }
-
-func (s *ServiceProxy) Services() map[string][]uint32 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	services := make(map[string][]uint32)
-	for service, val := range s.serviceIDPortMaps {
-		ports := make([]uint32, 0)
-		for port, addr := range val {
-			// don't return the IP of other proxied nodes to avoid an infinite cycle
-			if net.ParseIP(strings.Split(addr, ":")[0]).IsPrivate() {
-				ports = append(ports, port)
-			}
-		}
-		if len(ports) > 0 {
-			services[service] = ports
-		}
-	}
-
-	return services
-}

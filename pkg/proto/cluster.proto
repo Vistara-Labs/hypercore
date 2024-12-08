@@ -8,13 +8,11 @@ option go_package = "pkg/proto/cluster;cluster";
 
 service ClusterService {
     rpc Spawn(VmSpawnRequest) returns (VmSpawnResponse);
-    rpc NodeState(NodeStateRequest) returns (NodesStateResponse);
 }
 
 enum ClusterEvent {
     ERROR = 0;
     SPAWN = 1;
-    NODE_STATE = 2;
 }
 
 message ClusterMessage {
@@ -40,21 +38,14 @@ message VmSpawnRequest {
     bool dry_run = 5;
 }
 
-message NodeStateRequest {
-}
-
 message WorkloadState {
     string id = 1;
-    map<uint32, uint32> ports = 2;
+    VmSpawnRequest source_request = 2;
 }
 
 message NodeStateResponse {
     Node node = 1;
     repeated WorkloadState workloads = 2;
-}
-
-message NodesStateResponse {
-    repeated NodeStateResponse responses = 1;
 }
 
 message VmSpawnResponse {

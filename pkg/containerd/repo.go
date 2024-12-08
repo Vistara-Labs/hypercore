@@ -67,6 +67,10 @@ func NewMicroVMRepository(cfg *Config) (*Repo, error) {
 	}, nil
 }
 
+func (r *Repo) GetContext(ctx context.Context) context.Context {
+	return namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
+}
+
 func (r *Repo) Attach(ctx context.Context, containerID string) error {
 	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
 
@@ -167,6 +171,7 @@ func (r *Repo) GetTasks(ctx context.Context) ([]*task.Process, error) {
 
 func (r *Repo) GetContainer(ctx context.Context, id string) (containerd.Container, error) {
 	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
+
 	return r.client.LoadContainer(namespaceCtx, id)
 }
 

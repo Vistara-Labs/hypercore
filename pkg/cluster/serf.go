@@ -13,7 +13,7 @@ import (
 	vcontainerd "vistara-node/pkg/containerd"
 	pb "vistara-node/pkg/proto/cluster"
 
-	"github.com/containerd/containerd"
+	ctask "github.com/containerd/containerd/api/types/task"
 	"github.com/containerd/containerd/cio"
 	"github.com/google/uuid"
 	"github.com/hashicorp/serf/serf"
@@ -27,7 +27,7 @@ const (
 	SpawnRequestLabel   = "hypercore-request-payload"
 	StateBroadcastEvent = "hypercore_state_broadcast"
 
-	WORKLOAD_BROADCAST_PERIOD = time.Second * 5
+	WorkloadBroadcastPeriod = time.Second * 5
 )
 
 type SavedStatusUpdate struct {
@@ -88,47 +88,10 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, repo *vcontainerd.Re
 		ctrRepo:         repo,
 		lastStateUpdate: make(map[string]SavedStatusUpdate),
 	}
-	go agent.broadcastWorkloads()
 	go agent.monitorWorkloads()
 	go agent.monitorStateUpdates()
 
 	return agent, nil
-}
-
-func (a *Agent) handleNodeStateRequest() (ret []byte, retErr error) {
-	defer func() {
-		if retErr != nil {
-			a.logger.WithError(retErr).Error("handleNodeStateRequest failed")
-			ret, retErr = wrapClusterErrorMessage(retErr.Error())
-		}
-	}()
-
-	ctx := context.Background()
-
-	tasks, err := a.ctrRepo.GetTasks(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get existing tasks to check capacity: %w", err)
-	}
-
-	var resp pb.NodeStateResponse
-
-	for _, task := range tasks {
-		id := task.GetID()
-		_, err := a.ctrRepo.GetContainer(ctx, id)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get container %s: %w", id, err)
-		}
-		resp.Workloads = append(resp.Workloads, &pb.WorkloadState{
-			Id: id,
-		})
-	}
-
-	response, err := wrapClusterMessage(pb.ClusterEvent_NODE_STATE, &resp)
-	if err != nil {
-		return nil, fmt.Errorf("failed to wrap cluster message: %w", err)
-	}
-
-	return response, nil
 }
 
 func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retErr error) {
@@ -229,18 +192,6 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 		return nil, fmt.Errorf("failed to spawn container: %w", err)
 	}
 
-	ip, err := a.ctrRepo.GetContainerPrimaryIP(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get IP for container %s", id)
-	}
-
-	for hostPort, containerPort := range payload.GetPorts() {
-		addr := fmt.Sprintf("%s:%d", ip, containerPort)
-		if err := a.serviceProxy.Register(hostPort, id, addr); err != nil {
-			return nil, fmt.Errorf("failed to register container %s addr %s with proxy: %w", id, addr, err)
-		}
-	}
-
 	response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{Id: id, Url: id + "." + a.baseURL})
 	if err != nil {
 		return nil, fmt.Errorf("failed to wrap cluster message: %w", err)
@@ -286,9 +237,6 @@ func (a *Agent) Handler() {
 				}
 
 				response, err = a.handleSpawnRequest(&payload)
-			case pb.ClusterEvent_NODE_STATE:
-				var _ pb.NodeStateRequest
-				response, err = a.handleNodeStateRequest()
 			case pb.ClusterEvent_ERROR:
 				fallthrough
 			default:
@@ -337,7 +285,7 @@ func (a *Agent) Handler() {
 			a.lastStateMu.Unlock()
 
 			for _, service := range workloads.GetWorkloads() {
-				for _, port := range service.GetPorts() {
+				for port := range service.GetSourceRequest().GetPorts() {
 					addr := fmt.Sprintf("%s:%d", member.Addr.String(), port)
 					if err := a.serviceProxy.Register(port, service.GetId(), addr); err != nil {
 						a.logger.WithError(err).Errorf("failed to register node %s service %s addr %s with proxy", member.Name, service, addr)
@@ -446,76 +394,83 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error
 	return nil, errors.New("no response received from nodes")
 }
 
-// Request state of all nodes including the VMs running on them
-func (a *Agent) NodeStateRequest() (*pb.NodesStateResponse, error) {
-	payload, err := wrapClusterMessage(pb.ClusterEvent_NODE_STATE, &pb.NodeStateRequest{})
-	if err != nil {
-		return nil, err
-	}
-
-	query, err := a.serf.Query(QueryName, payload, a.serf.DefaultQueryParams())
-	if err != nil {
-		return nil, err
-	}
-
-	stateResp := pb.NodesStateResponse{}
-
-	for response := range query.ResponseCh() {
-		var resp pb.ClusterMessage
-		if err := proto.Unmarshal(response.Payload, &resp); err != nil {
-			return nil, err
-		}
-
-		if resp.GetEvent() == pb.ClusterEvent_ERROR {
-			var errorResp pb.ErrorResponse
-			if err := resp.GetWrappedMessage().UnmarshalTo(&errorResp); err != nil {
-				return nil, err
-			}
-
-			a.logger.Warnf("node returned failure response: %s", errorResp.GetError())
-
-			continue
-		}
-
-		var wrappedResp pb.NodeStateResponse
-		if err := resp.GetWrappedMessage().UnmarshalTo(&wrappedResp); err != nil {
-			return nil, err
-		}
-
-		member := a.findMember(response.From)
-		if member == nil {
-			a.logger.Warnf("Got response from %s but did not find it in member list", response.From)
-
-			continue
-		}
-
-		wrappedResp.Node = &pb.Node{
-			Id: member.Name,
-			Ip: member.Addr.String(),
-		}
-
-		stateResp.Responses = append(stateResp.Responses, &wrappedResp)
-	}
-
-	return &stateResp, nil
-}
-
 // broadcast the workloads running on the node every 30 seconds
 // so existing nodes can update their state and new nodes can
 // sync up with the current state of the cluster
-func (a *Agent) broadcastWorkloads() {
-	ticker := time.NewTicker(WORKLOAD_BROADCAST_PERIOD)
+// also cleanup and re-spawn dead containers
+//
+//nolint:gocognit
+func (a *Agent) monitorWorkloads() {
+	ticker := time.NewTicker(WorkloadBroadcastPeriod)
 	for range ticker.C {
+		tasks, err := a.ctrRepo.GetTasks(context.Background())
+		if err != nil {
+			a.logger.WithError(err).Error("failed to get tasks")
+
+			continue
+		}
+
 		resp := pb.NodeStateResponse{
 			Node: &pb.Node{
 				Id: a.serf.LocalMember().Name,
 			},
 		}
-		for id, ports := range a.serviceProxy.Services() {
-			resp.Workloads = append(resp.Workloads, &pb.WorkloadState{
-				Id:    id,
-				Ports: ports,
-			})
+
+		for _, task := range tasks {
+			a.logger.Infof("Got task %s, state: %s", task.GetID(), task.GetStatus())
+
+			container, err := a.ctrRepo.GetContainer(context.Background(), task.GetID())
+			if err != nil {
+				a.logger.WithError(err).Errorf("failed to get container for task %s", task.GetID())
+
+				continue
+			}
+
+			labels, err := container.Labels(context.Background())
+			if err != nil {
+				a.logger.WithError(err).Errorf("failed to get labels for container %s: %s", task.GetID(), err)
+
+				continue
+			}
+
+			var labelPayload pb.VmSpawnRequest
+			if err := json.Unmarshal([]byte(labels[SpawnRequestLabel]), &labelPayload); err != nil {
+				a.logger.Errorf("failed to unmarshal request from label: %s", err)
+
+				continue
+			}
+
+			if task.GetStatus() == ctask.Status_STOPPED {
+				a.logger.Infof("task %s is stopped, deleting container and respawning", task.GetID())
+
+				if _, err := a.ctrRepo.DeleteContainer(context.Background(), task.GetID()); err != nil {
+					a.logger.Errorf("failed to stop task %s: %s", task.GetID(), err)
+				}
+
+				go func() {
+					if _, err := a.handleSpawnRequest(&labelPayload); err != nil {
+						a.logger.Errorf("failed to respawn container %s: %s", task.GetID(), err)
+					}
+				}()
+
+				continue
+			}
+
+			ip, err := a.ctrRepo.GetContainerPrimaryIP(context.Background(), container.ID())
+			if err != nil {
+				a.logger.Errorf("failed to get IP for container %s: %s", container.ID(), err)
+
+				continue
+			}
+
+			for hostPort, containerPort := range labelPayload.GetPorts() {
+				addr := fmt.Sprintf("%s:%d", ip, containerPort)
+				if err := a.serviceProxy.Register(hostPort, container.ID(), addr); err != nil {
+					a.logger.Errorf("failed to register container %s addr %s with proxy: %s", container.ID(), addr, err)
+				}
+			}
+
+			resp.Workloads = append(resp.Workloads, &pb.WorkloadState{Id: container.ID(), SourceRequest: &labelPayload})
 		}
 
 		marshaled, err := proto.Marshal(&resp)
@@ -531,56 +486,15 @@ func (a *Agent) broadcastWorkloads() {
 	}
 }
 
-func (a *Agent) monitorWorkloads() {
-	ticker := time.NewTicker(time.Second * 10)
-
-	for range ticker.C {
-		tasks, err := a.ctrRepo.GetTasks(context.Background())
-		if err != nil {
-			a.logger.WithError(err).Error("failed to get tasks")
-			continue
-		}
-
-		for _, task := range tasks {
-			a.logger.Info("Got task %s, state: %s", task.GetID(), task.GetStatus())
-
-			container, err := a.ctrRepo.GetContainer(context.Background(), task.GetID())
-			if err != nil {
-				a.logger.WithError(err).Error("failed to get container for task %s", task.GetID())
-				continue
-			}
-
-			task, err := container.Task(context.Background(), nil)
-			if err != nil {
-				a.logger.WithError(err).Error("failed to get existing task for container %s: %w", task.ID, err)
-				continue
-			}
-
-			status, err := task.Status(context.Background())
-			if err != nil {
-				a.logger.WithError(err).Error("failed to get status for task %s: %w", task.ID, err)
-				continue
-			}
-
-			if status.Status == containerd.Stopped {
-				if err := task.Start(context.Background()); err != nil {
-					a.logger.WithError(err).Error("failed to restart task %s: %w", task.ID, err)
-				} else {
-					a.logger.Info("successfully restarted task %s", task.ID)
-				}
-			}
-		}
-	}
-}
-
 func (a *Agent) monitorStateUpdates() {
-	ticker := time.NewTicker(WORKLOAD_BROADCAST_PERIOD)
+	ticker := time.NewTicker(WorkloadBroadcastPeriod)
 	for range ticker.C {
 		a.lastStateMu.Lock()
 		for node, update := range a.lastStateUpdate {
-			if time.Since(update.receivedAt) > (WORKLOAD_BROADCAST_PERIOD * 3) {
+			if time.Since(update.receivedAt) > (WorkloadBroadcastPeriod * 3) {
 				a.logger.Warnf("Update from node %s last received at %v, re-scheduling workloads", node, update.receivedAt)
 				for _, service := range update.update.GetWorkloads() {
+					_ = service // TODO
 				}
 			}
 		}
