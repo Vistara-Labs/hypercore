@@ -403,7 +403,9 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error
 func (a *Agent) monitorWorkloads() {
 	ticker := time.NewTicker(WorkloadBroadcastPeriod)
 	for range ticker.C {
-		tasks, err := a.ctrRepo.GetTasks(context.Background())
+		ctx := a.ctrRepo.GetContext(context.Background())
+
+		tasks, err := a.ctrRepo.GetTasks(ctx)
 		if err != nil {
 			a.logger.WithError(err).Error("failed to get tasks")
 
@@ -419,14 +421,14 @@ func (a *Agent) monitorWorkloads() {
 		for _, task := range tasks {
 			a.logger.Infof("Got task %s, state: %s", task.GetID(), task.GetStatus())
 
-			container, err := a.ctrRepo.GetContainer(context.Background(), task.GetID())
+			container, err := a.ctrRepo.GetContainer(ctx, task.GetID())
 			if err != nil {
 				a.logger.WithError(err).Errorf("failed to get container for task %s", task.GetID())
 
 				continue
 			}
 
-			labels, err := container.Labels(context.Background())
+			labels, err := container.Labels(ctx)
 			if err != nil {
 				a.logger.WithError(err).Errorf("failed to get labels for container %s: %s", task.GetID(), err)
 
@@ -443,7 +445,7 @@ func (a *Agent) monitorWorkloads() {
 			if task.GetStatus() == ctask.Status_STOPPED {
 				a.logger.Infof("task %s is stopped, deleting container and respawning", task.GetID())
 
-				if _, err := a.ctrRepo.DeleteContainer(context.Background(), task.GetID()); err != nil {
+				if _, err := a.ctrRepo.DeleteContainer(ctx, task.GetID()); err != nil {
 					a.logger.Errorf("failed to stop task %s: %s", task.GetID(), err)
 				}
 
@@ -456,7 +458,7 @@ func (a *Agent) monitorWorkloads() {
 				continue
 			}
 
-			ip, err := a.ctrRepo.GetContainerPrimaryIP(context.Background(), container.ID())
+			ip, err := a.ctrRepo.GetContainerPrimaryIP(ctx, container.ID())
 			if err != nil {
 				a.logger.Errorf("failed to get IP for container %s: %s", container.ID(), err)
 
