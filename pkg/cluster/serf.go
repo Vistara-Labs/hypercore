@@ -47,7 +47,7 @@ type Agent struct {
 	lastStateUpdate map[string]SavedStatusUpdate
 }
 
-func NewAgent(logger *log.Logger, baseURL, bindAddr string, repo *vcontainerd.Repo, tlsConfig *TLSConfig) (*Agent, error) {
+func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *vcontainerd.Repo, tlsConfig *TLSConfig) (*Agent, error) {
 	eventCh := make(chan serf.Event, 64)
 
 	serviceProxy, err := NewServiceProxy(logger, tlsConfig)
@@ -89,7 +89,10 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, repo *vcontainerd.Re
 		lastStateUpdate: make(map[string]SavedStatusUpdate),
 	}
 	go agent.monitorWorkloads()
-	go agent.monitorStateUpdates()
+
+	if respawn {
+		go agent.monitorStateUpdates()
+	}
 
 	return agent, nil
 }
@@ -496,7 +499,13 @@ func (a *Agent) monitorStateUpdates() {
 			if time.Since(update.receivedAt) > (WorkloadBroadcastPeriod * 3) {
 				a.logger.Warnf("Update from node %s last received at %v, re-scheduling workloads", node, update.receivedAt)
 				for _, service := range update.update.GetWorkloads() {
-					_ = service // TODO
+					go func() {
+						if resp, err := a.SpawnRequest(service.SourceRequest); err != nil {
+							a.logger.WithError(err).Errorf("failed to respawn service %s", service.Id)
+						} else {
+							a.logger.Infof("successfully respawned service %s: %+v", service.Id, resp)
+						}
+					}()
 				}
 			}
 		}
