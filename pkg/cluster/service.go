@@ -20,12 +20,6 @@ func (s *server) Spawn(_ context.Context, req *pb.VmSpawnRequest) (*pb.VmSpawnRe
 	return s.agent.SpawnRequest(req)
 }
 
-func (s *server) NodeState(_ context.Context, _ *pb.NodeStateRequest) (*pb.NodesStateResponse, error) {
-	s.logger.Info("Received node state request")
-
-	return s.agent.NodeStateRequest()
-}
-
 func NewServer(logger *log.Logger, agent *Agent) *grpc.Server {
 	grpcServer := grpc.NewServer()
 	pb.RegisterClusterServiceServer(grpcServer, &server{

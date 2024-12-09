@@ -136,39 +136,6 @@ func ClusterSpawnCommand(cfg *Config) *cobra.Command {
 	return cmd
 }
 
-func ClusterListCommand(cfg *Config) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "list cluster state",
-		PreRunE: func(c *cobra.Command, _ []string) error {
-			BindCommandToViper(c)
-
-			return nil
-		},
-		RunE: func(_ *cobra.Command, _ []string) error {
-			conn, err := grpc.NewClient(cfg.GrpcBindAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-			if err != nil {
-				return err
-			}
-			defer conn.Close()
-
-			c := pb.NewClusterServiceClient(conn)
-			resp, err := c.NodeState(context.Background(), &pb.NodeStateRequest{})
-			if err != nil {
-				return err
-			}
-
-			log.Infof("Got response: %v", resp)
-
-			return nil
-		},
-	}
-
-	AddClusterSpawnFlags(cmd, cfg)
-
-	return cmd
-}
-
 func ClusterCommand(cfg *Config) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cluster",
@@ -196,7 +163,7 @@ func ClusterCommand(cfg *Config) *cobra.Command {
 				}
 			}
 
-			agent, err := cluster.NewAgent(logger, cfg.ClusterBaseURL, cfg.ClusterBindAddr, repo, tlsConfig)
+			agent, err := cluster.NewAgent(logger, cfg.ClusterBaseURL, cfg.ClusterBindAddr, cfg.RespawnOnNodeFailure, repo, tlsConfig)
 			if err != nil {
 				return err
 			}
@@ -235,7 +202,6 @@ func ClusterCommand(cfg *Config) *cobra.Command {
 	}
 
 	cmd.AddCommand(ClusterSpawnCommand(cfg))
-	cmd.AddCommand(ClusterListCommand(cfg))
 
 	// TODO remove hac/vmm flags
 	AddCommonFlags(cmd, cfg)

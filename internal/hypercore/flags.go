@@ -11,19 +11,20 @@ import (
 )
 
 const (
-	hacFileFlag          = "hac"
-	containerdSocketFlag = "containerd-socket"
-	containerdNamespace  = "containerd-ns"
-	vmProviderFlag       = "provider"
-	grpcBindAddrFlag     = "grpc-bind-addr"
-	clusterBindAddrFlag  = "cluster-bind-addr"
-	clusterBaseURLFlag   = "cluster-base-url"
-	clusterTLSCertFlag   = "cluster-tls-cert"
-	clusterTLSKeyFlag    = "cluster-tls-key"
-	cpuFlag              = "cpu"
-	memoryFlag           = "mem"
-	imageRefFlag         = "image-ref"
-	portsFlag            = "ports"
+	hacFileFlag              = "hac"
+	containerdSocketFlag     = "containerd-socket"
+	containerdNamespace      = "containerd-ns"
+	vmProviderFlag           = "provider"
+	grpcBindAddrFlag         = "grpc-bind-addr"
+	clusterBindAddrFlag      = "cluster-bind-addr"
+	clusterBaseURLFlag       = "cluster-base-url"
+	clusterTLSCertFlag       = "cluster-tls-cert"
+	clusterTLSKeyFlag        = "cluster-tls-key"
+	respawnOnNodeFailureFlag = "respawn-on-node-failure"
+	cpuFlag                  = "cpu"
+	memoryFlag               = "mem"
+	imageRefFlag             = "image-ref"
+	portsFlag                = "ports"
 )
 
 func AddCommonFlags(cmd *cobra.Command, cfg *Config) {
@@ -54,6 +55,7 @@ func AddClusterFlags(cmd *cobra.Command, cfg *Config) {
 	cmd.Flags().StringVar(&cfg.ClusterBaseURL, clusterBaseURLFlag, "example.com", "Cluster base URL")
 	cmd.Flags().StringVar(&cfg.ClusterTLSCert, clusterTLSCertFlag, "", "Cluster tls cert path")
 	cmd.Flags().StringVar(&cfg.ClusterTLSKey, clusterTLSKeyFlag, "", "Cluster tls key path")
+	cmd.Flags().BoolVar(&cfg.RespawnOnNodeFailure, respawnOnNodeFailureFlag, false, "Whether this node monitors other cluster nodes and re-schedules their tasks on failure")
 }
 
 func AddClusterSpawnFlags(cmd *cobra.Command, cfg *Config) {
