@@ -14,7 +14,6 @@ import (
 	"github.com/containerd/containerd/api/services/tasks/v1"
 	"github.com/containerd/containerd/api/types/task"
 	"github.com/containerd/containerd/cio"
-	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
 	"github.com/containerd/containerd/pkg/netns"
@@ -66,6 +65,10 @@ func NewMicroVMRepository(cfg *Config) (*Repo, error) {
 		client: client,
 		config: cfg,
 	}, nil
+}
+
+func (r *Repo) GetContext(ctx context.Context) context.Context {
+	return namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
 }
 
 func (r *Repo) Attach(ctx context.Context, containerID string) error {
@@ -166,14 +169,10 @@ func (r *Repo) GetTasks(ctx context.Context) ([]*task.Process, error) {
 	return resp.GetTasks(), nil
 }
 
-func (r *Repo) GetContainer(ctx context.Context, id string) (containers.Container, error) {
+func (r *Repo) GetContainer(ctx context.Context, id string) (containerd.Container, error) {
 	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
-	container, err := r.client.ContainerService().Get(namespaceCtx, id)
-	if err != nil {
-		return containers.Container{}, err
-	}
 
-	return container, nil
+	return r.client.LoadContainer(namespaceCtx, id)
 }
 
 func (r *Repo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_ string, retErr error) {

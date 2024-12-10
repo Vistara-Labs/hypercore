@@ -8,10 +8,12 @@ import (
 	"net"
 	"runtime"
 	"strconv"
+	"sync"
 	"time"
-	"vistara-node/pkg/containerd"
+	vcontainerd "vistara-node/pkg/containerd"
 	pb "vistara-node/pkg/proto/cluster"
 
+	ctask "github.com/containerd/containerd/api/types/task"
 	"github.com/containerd/containerd/cio"
 	"github.com/google/uuid"
 	"github.com/hashicorp/serf/serf"
@@ -21,21 +23,31 @@ import (
 )
 
 const (
-	QueryName         = "hypercore_query"
-	SpawnRequestLabel = "hypercore-request-payload"
+	QueryName           = "hypercore_query"
+	SpawnRequestLabel   = "hypercore-request-payload"
+	StateBroadcastEvent = "hypercore_state_broadcast"
+
+	WorkloadBroadcastPeriod = time.Second * 5
 )
 
-type Agent struct {
-	eventCh      chan serf.Event
-	serviceProxy *ServiceProxy
-	ctrRepo      *containerd.Repo
-	cfg          *serf.Config
-	serf         *serf.Serf
-	baseURL      string
-	logger       *log.Logger
+type SavedStatusUpdate struct {
+	update     *pb.NodeStateResponse
+	receivedAt time.Time
 }
 
-func NewAgent(logger *log.Logger, baseURL, bindAddr string, repo *containerd.Repo, tlsConfig *TLSConfig) (*Agent, error) {
+type Agent struct {
+	eventCh         chan serf.Event
+	serviceProxy    *ServiceProxy
+	ctrRepo         *vcontainerd.Repo
+	cfg             *serf.Config
+	serf            *serf.Serf
+	baseURL         string
+	logger          *log.Logger
+	lastStateMu     sync.Mutex
+	lastStateUpdate map[string]SavedStatusUpdate
+}
+
+func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *vcontainerd.Repo, tlsConfig *TLSConfig) (*Agent, error) {
 	eventCh := make(chan serf.Event, 64)
 
 	serviceProxy, err := NewServiceProxy(logger, tlsConfig)
@@ -67,57 +79,26 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, repo *containerd.Rep
 	}
 
 	agent := &Agent{
-		eventCh:      eventCh,
-		cfg:          cfg,
-		baseURL:      baseURL,
-		serviceProxy: serviceProxy,
-		serf:         serf,
-		logger:       logger,
-		ctrRepo:      repo,
+		eventCh:         eventCh,
+		cfg:             cfg,
+		baseURL:         baseURL,
+		serviceProxy:    serviceProxy,
+		serf:            serf,
+		logger:          logger,
+		ctrRepo:         repo,
+		lastStateUpdate: make(map[string]SavedStatusUpdate),
+	}
+	go agent.monitorWorkloads()
+
+	if respawn {
+		go agent.monitorStateUpdates()
 	}
 
 	return agent, nil
 }
 
-func (a *Agent) handleNodeStateRequest() (ret []byte, retErr error) {
-	defer func() {
-		if retErr != nil {
-			a.logger.WithError(retErr).Error("handleNodeStateRequest failed")
-			ret, retErr = wrapClusterErrorMessage(retErr.Error())
-		}
-	}()
-
-	ctx := context.Background()
-
-	tasks, err := a.ctrRepo.GetTasks(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get existing tasks to check capacity: %w", err)
-	}
-
-	var resp pb.NodeStateResponse
-
-	for _, task := range tasks {
-		id := task.GetID()
-		container, err := a.ctrRepo.GetContainer(ctx, id)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get container %s: %w", id, err)
-		}
-		resp.Workloads = append(resp.Workloads, &pb.WorkloadState{
-			Id:       id,
-			ImageRef: container.Image,
-		})
-	}
-
-	response, err := wrapClusterMessage(pb.ClusterEvent_NODE_STATE, &resp)
-	if err != nil {
-		return nil, fmt.Errorf("failed to wrap cluster message: %w", err)
-	}
-
-	return response, nil
-}
-
 func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retErr error) {
-	ctx := context.Background()
+	ctx := a.ctrRepo.GetContext(context.Background())
 
 	for _, port := range payload.GetPorts() {
 		if port > 0xffff {
@@ -154,8 +135,13 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 			return nil, fmt.Errorf("failed to get container %s: %w", task.GetID(), err)
 		}
 
+		labels, err := container.Labels(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get labels for container %s: %w", task.GetID(), err)
+		}
+
 		var labelPayload pb.VmSpawnRequest
-		if err := json.Unmarshal([]byte(container.Labels[SpawnRequestLabel]), &labelPayload); err != nil {
+		if err := json.Unmarshal([]byte(labels[SpawnRequestLabel]), &labelPayload); err != nil {
 			return nil, err
 		}
 
@@ -184,7 +170,7 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 		return nil, err
 	}
 
-	id, err := a.ctrRepo.CreateContainer(ctx, containerd.CreateContainerOpts{
+	id, err := a.ctrRepo.CreateContainer(ctx, vcontainerd.CreateContainerOpts{
 		ImageRef:    payload.GetImageRef(),
 		Snapshotter: "",
 		Runtime: struct {
@@ -209,18 +195,6 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 		return nil, fmt.Errorf("failed to spawn container: %w", err)
 	}
 
-	ip, err := a.ctrRepo.GetContainerPrimaryIP(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get IP for container %s", id)
-	}
-
-	for hostPort, containerPort := range payload.GetPorts() {
-		addr := fmt.Sprintf("%s:%d", ip, containerPort)
-		if err := a.serviceProxy.Register(hostPort, id, addr); err != nil {
-			return nil, fmt.Errorf("failed to register container %s addr %s with proxy: %w", id, addr, err)
-		}
-	}
-
 	response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{Id: id, Url: id + "." + a.baseURL})
 	if err != nil {
 		return nil, fmt.Errorf("failed to wrap cluster message: %w", err)
@@ -229,6 +203,7 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 	return response, nil
 }
 
+//nolint:gocognit
 func (a *Agent) Handler() {
 	for event := range a.eventCh {
 		switch event.EventType() {
@@ -265,9 +240,6 @@ func (a *Agent) Handler() {
 				}
 
 				response, err = a.handleSpawnRequest(&payload)
-			case pb.ClusterEvent_NODE_STATE:
-				var _ pb.NodeStateRequest
-				response, err = a.handleNodeStateRequest()
 			case pb.ClusterEvent_ERROR:
 				fallthrough
 			default:
@@ -285,6 +257,46 @@ func (a *Agent) Handler() {
 			if err := query.Respond(response); err != nil {
 				a.logger.WithError(err).Error("failed to respond to query")
 			}
+		case serf.EventUser:
+			userEvent := event.(serf.UserEvent)
+
+			var workloads pb.NodeStateResponse
+
+			if err := proto.Unmarshal(userEvent.Payload, &workloads); err != nil {
+				a.logger.WithError(err).Error("failed to unmarshal")
+
+				continue
+			}
+
+			if workloads.GetNode().GetId() == a.serf.LocalMember().Name {
+				continue
+			}
+
+			member := a.findMember(workloads.GetNode().GetId())
+			if member == nil {
+				a.logger.Warnf("member for node %s not found", workloads.GetNode().GetId())
+
+				continue
+			}
+
+			a.logger.Infof("Got workloads of node %s IP %v", workloads.GetNode().GetId(), member.Addr)
+			a.lastStateMu.Lock()
+			a.lastStateUpdate[member.Name] = SavedStatusUpdate{
+				update:     &workloads,
+				receivedAt: time.Now(),
+			}
+			a.lastStateMu.Unlock()
+
+			for _, service := range workloads.GetWorkloads() {
+				for port := range service.GetSourceRequest().GetPorts() {
+					addr := fmt.Sprintf("%s:%d", member.Addr.String(), port)
+					if err := a.serviceProxy.Register(port, service.GetId(), addr); err != nil {
+						a.logger.WithError(err).Errorf("failed to register node %s service %s addr %s with proxy", member.Name, service, addr)
+
+						continue
+					}
+				}
+			}
 		case serf.EventMemberLeave:
 			fallthrough
 		case serf.EventMemberFailed:
@@ -292,8 +304,6 @@ func (a *Agent) Handler() {
 		case serf.EventMemberUpdate:
 			fallthrough
 		case serf.EventMemberReap:
-			fallthrough
-		case serf.EventUser:
 			fallthrough
 		default:
 			a.logger.Infof("Received event: %v", event)
@@ -387,58 +397,120 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error
 	return nil, errors.New("no response received from nodes")
 }
 
-// Request state of all nodes including the VMs running on them
-func (a *Agent) NodeStateRequest() (*pb.NodesStateResponse, error) {
-	payload, err := wrapClusterMessage(pb.ClusterEvent_NODE_STATE, &pb.NodeStateRequest{})
-	if err != nil {
-		return nil, err
-	}
+// broadcast the workloads running on the node every 30 seconds
+// so existing nodes can update their state and new nodes can
+// sync up with the current state of the cluster
+// also cleanup and re-spawn dead containers
+//
+//nolint:gocognit
+func (a *Agent) monitorWorkloads() {
+	ticker := time.NewTicker(WorkloadBroadcastPeriod)
+	for range ticker.C {
+		ctx := a.ctrRepo.GetContext(context.Background())
 
-	query, err := a.serf.Query(QueryName, payload, a.serf.DefaultQueryParams())
-	if err != nil {
-		return nil, err
-	}
+		tasks, err := a.ctrRepo.GetTasks(ctx)
+		if err != nil {
+			a.logger.WithError(err).Error("failed to get tasks")
 
-	stateResp := pb.NodesStateResponse{}
-
-	for response := range query.ResponseCh() {
-		var resp pb.ClusterMessage
-		if err := proto.Unmarshal(response.Payload, &resp); err != nil {
-			return nil, err
+			continue
 		}
 
-		if resp.GetEvent() == pb.ClusterEvent_ERROR {
-			var errorResp pb.ErrorResponse
-			if err := resp.GetWrappedMessage().UnmarshalTo(&errorResp); err != nil {
-				return nil, err
+		resp := pb.NodeStateResponse{
+			Node: &pb.Node{
+				Id: a.serf.LocalMember().Name,
+			},
+		}
+
+		for _, task := range tasks {
+			a.logger.Infof("Got task %s, state: %s", task.GetID(), task.GetStatus())
+
+			container, err := a.ctrRepo.GetContainer(ctx, task.GetID())
+			if err != nil {
+				a.logger.WithError(err).Errorf("failed to get container for task %s", task.GetID())
+
+				continue
 			}
 
-			a.logger.Warnf("node returned failure response: %s", errorResp.GetError())
+			labels, err := container.Labels(ctx)
+			if err != nil {
+				a.logger.WithError(err).Errorf("failed to get labels for container %s: %s", task.GetID(), err)
+
+				continue
+			}
+
+			var labelPayload pb.VmSpawnRequest
+			if err := json.Unmarshal([]byte(labels[SpawnRequestLabel]), &labelPayload); err != nil {
+				a.logger.Errorf("failed to unmarshal request from label: %s", err)
+
+				continue
+			}
+
+			if task.GetStatus() == ctask.Status_STOPPED {
+				a.logger.Infof("task %s is stopped, deleting container and respawning", task.GetID())
+
+				if _, err := a.ctrRepo.DeleteContainer(ctx, task.GetID()); err != nil {
+					a.logger.Errorf("failed to stop task %s: %s", task.GetID(), err)
+				}
+
+				go func() {
+					if _, err := a.handleSpawnRequest(&labelPayload); err != nil {
+						a.logger.Errorf("failed to respawn container %s: %s", task.GetID(), err)
+					}
+				}()
+
+				continue
+			}
+
+			ip, err := a.ctrRepo.GetContainerPrimaryIP(ctx, container.ID())
+			if err != nil {
+				a.logger.Errorf("failed to get IP for container %s: %s", container.ID(), err)
+
+				continue
+			}
+
+			for hostPort, containerPort := range labelPayload.GetPorts() {
+				addr := fmt.Sprintf("%s:%d", ip, containerPort)
+				if err := a.serviceProxy.Register(hostPort, container.ID(), addr); err != nil {
+					a.logger.Errorf("failed to register container %s addr %s with proxy: %s", container.ID(), addr, err)
+				}
+			}
+
+			resp.Workloads = append(resp.Workloads, &pb.WorkloadState{Id: container.ID(), SourceRequest: &labelPayload})
+		}
+
+		marshaled, err := proto.Marshal(&resp)
+		if err != nil {
+			a.logger.WithError(err).Error("failed to marshal")
 
 			continue
 		}
 
-		var wrappedResp pb.NodeStateResponse
-		if err := resp.GetWrappedMessage().UnmarshalTo(&wrappedResp); err != nil {
-			return nil, err
+		if err := a.serf.UserEvent(StateBroadcastEvent, marshaled, true); err != nil {
+			a.logger.WithError(err).Error("failed to broadcast workload state")
 		}
-
-		member := a.findMember(response.From)
-		if member == nil {
-			a.logger.Warnf("Got response from %s but did not find it in member list", response.From)
-
-			continue
-		}
-
-		wrappedResp.Node = &pb.Node{
-			Id: member.Name,
-			Ip: member.Addr.String(),
-		}
-
-		stateResp.Responses = append(stateResp.Responses, &wrappedResp)
 	}
+}
 
-	return &stateResp, nil
+func (a *Agent) monitorStateUpdates() {
+	ticker := time.NewTicker(WorkloadBroadcastPeriod)
+	for range ticker.C {
+		a.lastStateMu.Lock()
+		for node, update := range a.lastStateUpdate {
+			if time.Since(update.receivedAt) > (WorkloadBroadcastPeriod * 3) {
+				a.logger.Warnf("Update from node %s last received at %v, re-scheduling workloads", node, update.receivedAt)
+				for _, service := range update.update.GetWorkloads() {
+					go func() {
+						if resp, err := a.SpawnRequest(service.GetSourceRequest()); err != nil {
+							a.logger.WithError(err).Errorf("failed to respawn service %s", service.GetId())
+						} else {
+							a.logger.Infof("successfully respawned service %s: %+v", service.GetId(), resp)
+						}
+					}()
+				}
+			}
+		}
+		a.lastStateMu.Unlock()
+	}
 }
 
 func (a *Agent) findMember(name string) *serf.Member {
