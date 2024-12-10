@@ -98,7 +98,7 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *
 }
 
 func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retErr error) {
-	ctx := context.Background()
+	ctx := a.ctrRepo.GetContext(context.Background())
 
 	for _, port := range payload.GetPorts() {
 		if port > 0xffff {
@@ -500,10 +500,10 @@ func (a *Agent) monitorStateUpdates() {
 				a.logger.Warnf("Update from node %s last received at %v, re-scheduling workloads", node, update.receivedAt)
 				for _, service := range update.update.GetWorkloads() {
 					go func() {
-						if resp, err := a.SpawnRequest(service.SourceRequest); err != nil {
-							a.logger.WithError(err).Errorf("failed to respawn service %s", service.Id)
+						if resp, err := a.SpawnRequest(service.GetSourceRequest()); err != nil {
+							a.logger.WithError(err).Errorf("failed to respawn service %s", service.GetId())
 						} else {
-							a.logger.Infof("successfully respawned service %s: %+v", service.Id, resp)
+							a.logger.Infof("successfully respawned service %s: %+v", service.GetId(), resp)
 						}
 					}()
 				}
