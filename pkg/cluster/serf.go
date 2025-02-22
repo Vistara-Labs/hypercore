@@ -71,6 +71,7 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *
 	cfg.MemberlistConfig.BindAddr = addr
 	cfg.MemberlistConfig.BindPort = bindPort
 	cfg.MemberlistConfig.AdvertisePort = bindPort
+	cfg.UserEventSizeLimit = 9 * 1024
 	cfg.Init()
 
 	serf, err := serf.Create(cfg)
