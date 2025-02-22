@@ -120,6 +120,7 @@ func ClusterSpawnCommand(cfg *Config) *cobra.Command {
 				Memory:   uint32(cfg.ClusterSpawn.Memory),
 				ImageRef: cfg.ClusterSpawn.ImageRef,
 				Ports:    ports,
+				Env:      cfg.ClusterSpawn.Env,
 			})
 			if err != nil {
 				return err

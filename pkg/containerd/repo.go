@@ -38,6 +38,7 @@ type CreateContainerOpts struct {
 	}
 	Labels     map[string]string
 	CioCreator cio.Creator
+	Env        []string
 }
 
 type Repo struct {
@@ -198,6 +199,7 @@ func (r *Repo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_
 		oci.WithImageConfig(image),
 		oci.WithHostResolvconf,
 		oci.WithLinuxNamespace(specs.LinuxNamespace{Type: "network", Path: netNs.GetPath()}),
+		oci.WithEnv(opts.Env),
 	}
 	if opts.Limits != nil {
 		specOpts = append(

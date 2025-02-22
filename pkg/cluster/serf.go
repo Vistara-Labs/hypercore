@@ -190,6 +190,7 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 		Labels: map[string]string{
 			SpawnRequestLabel: string(encodedPayload),
 		},
+		Env: payload.GetEnv(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to spawn container: %w", err)

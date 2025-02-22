@@ -16,5 +16,6 @@ type Config struct {
 		Memory   int
 		ImageRef string
 		Ports    string
+		Env      []string
 	}
 }
