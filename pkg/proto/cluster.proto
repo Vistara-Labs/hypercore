@@ -36,6 +36,7 @@ message VmSpawnRequest {
     // host port -> container port
     map<uint32, uint32> ports = 4;
     bool dry_run = 5;
+    repeated string env = 6;
 }
 
 message WorkloadState {
