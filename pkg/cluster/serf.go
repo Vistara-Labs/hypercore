@@ -35,6 +35,11 @@ type SavedStatusUpdate struct {
 	receivedAt time.Time
 }
 
+type NodeWorkload struct {
+	ID       string `json:"id"`
+	ImageRef string `json:"imageRef"`
+}
+
 type Agent struct {
 	eventCh         chan serf.Event
 	serviceProxy    *ServiceProxy
@@ -205,6 +210,47 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 	return response, nil
 }
 
+func (a *Agent) handleStopRequest(payload *pb.VmStopRequest) (ret []byte, retErr error) {
+	ctx := a.ctrRepo.GetContext(context.Background())
+
+	defer func() {
+		if retErr != nil {
+			a.logger.WithError(retErr).Error("handleStopRequest failed")
+			ret, retErr = wrapClusterErrorMessage(retErr.Error())
+		}
+	}()
+
+	tasks, err := a.ctrRepo.GetTasks(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get existing tasks to check capacity: %w", err)
+	}
+
+	for _, task := range tasks {
+		container, err := a.ctrRepo.GetContainer(ctx, task.GetID())
+		if err != nil {
+			a.logger.WithError(err).Errorf("failed to get container for task %s", task.GetID())
+
+			continue
+		}
+
+		if container.ID() == payload.GetId() {
+			_, err := a.ctrRepo.DeleteContainer(ctx, task.GetID())
+			a.logger.WithError(err).Infof("Deleted container: %s", container.ID())
+
+			response, err := wrapClusterMessage(pb.ClusterEvent_STOP, &pb.Node{
+				Id: a.serf.LocalMember().Name,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to wrap cluster message: %w", err)
+			}
+
+			return response, nil
+		}
+	}
+
+	return nil, errors.New("workload not found")
+}
+
 //nolint:gocognit
 func (a *Agent) Handler() {
 	for event := range a.eventCh {
@@ -242,6 +288,15 @@ func (a *Agent) Handler() {
 				}
 
 				response, err = a.handleSpawnRequest(&payload)
+			case pb.ClusterEvent_STOP:
+				var payload pb.VmStopRequest
+				if err := baseMessage.GetWrappedMessage().UnmarshalTo(&payload); err != nil {
+					a.logger.WithError(err).Error("failed to unmarshal payload")
+
+					continue
+				}
+
+				response, err = a.handleStopRequest(&payload)
 			case pb.ClusterEvent_ERROR:
 				fallthrough
 			default:
@@ -399,6 +454,44 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error
 	return nil, errors.New("no response received from nodes")
 }
 
+func (a *Agent) StopRequest(req *pb.VmStopRequest) (*pb.Node, error) {
+	payload, err := wrapClusterMessage(pb.ClusterEvent_STOP, req)
+	if err != nil {
+		return nil, err
+	}
+
+	params := a.serf.DefaultQueryParams()
+	// Give 90 seconds to the node to stop the VM
+	params.Timeout = time.Second * 90
+	query, err := a.serf.Query(QueryName, payload, a.serf.DefaultQueryParams())
+	if err != nil {
+		return nil, err
+	}
+
+	for response := range query.ResponseCh() {
+		a.logger.Infof("Successful response from node: %s", response.From)
+
+		var resp pb.ClusterMessage
+		if err := proto.Unmarshal(response.Payload, &resp); err != nil {
+			return nil, err
+		}
+
+		// ignore failures
+		if resp.GetEvent() == pb.ClusterEvent_ERROR {
+			continue
+		}
+
+		var wrappedResp pb.Node
+		if err := resp.GetWrappedMessage().UnmarshalTo(&wrappedResp); err != nil {
+			return nil, err
+		}
+
+		return &wrappedResp, nil
+	}
+
+	return nil, errors.New("no success response received from nodes")
+}
+
 // broadcast the workloads running on the node every 30 seconds
 // so existing nodes can update their state and new nodes can
 // sync up with the current state of the cluster
@@ -513,6 +606,19 @@ func (a *Agent) monitorStateUpdates() {
 		}
 		a.lastStateMu.Unlock()
 	}
+}
+
+func (a *Agent) nodeStates() *pb.NodesStateResponse {
+	a.lastStateMu.Lock()
+	defer a.lastStateMu.Unlock()
+
+	workloadStates := make([]*pb.NodeStateResponse, 0)
+
+	for _, update := range a.lastStateUpdate {
+		workloadStates = append(workloadStates, update.update)
+	}
+
+	return &pb.NodesStateResponse{States: workloadStates}
 }
 
 func (a *Agent) findMember(name string) *serf.Member {
