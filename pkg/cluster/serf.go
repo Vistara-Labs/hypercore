@@ -49,6 +49,7 @@ type Agent struct {
 	baseURL         string
 	logger          *log.Logger
 	lastStateMu     sync.Mutex
+	lastStateSelf   *pb.NodeStateResponse
 	lastStateUpdate map[string]SavedStatusUpdate
 }
 
@@ -573,6 +574,10 @@ func (a *Agent) monitorWorkloads() {
 			resp.Workloads = append(resp.Workloads, &pb.WorkloadState{Id: container.ID(), SourceRequest: &labelPayload})
 		}
 
+		a.lastStateMu.Lock()
+		a.lastStateSelf = &resp
+		a.lastStateMu.Unlock()
+
 		marshaled, err := proto.Marshal(&resp)
 		if err != nil {
 			a.logger.WithError(err).Error("failed to marshal")
@@ -612,7 +617,7 @@ func (a *Agent) nodeStates() *pb.NodesStateResponse {
 	a.lastStateMu.Lock()
 	defer a.lastStateMu.Unlock()
 
-	workloadStates := make([]*pb.NodeStateResponse, 0)
+	workloadStates := []*pb.NodeStateResponse{a.lastStateSelf}
 
 	for _, update := range a.lastStateUpdate {
 		workloadStates = append(workloadStates, update.update)
