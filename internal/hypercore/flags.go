@@ -26,6 +26,7 @@ const (
 	imageRefFlag             = "image-ref"
 	portsFlag                = "ports"
 	envFlag                  = "env"
+	idFlag                   = "id"
 )
 
 func AddCommonFlags(cmd *cobra.Command, cfg *Config) {
@@ -66,6 +67,10 @@ func AddClusterSpawnFlags(cmd *cobra.Command, cfg *Config) {
 	cmd.Flags().StringVar(&cfg.ClusterSpawn.ImageRef, imageRefFlag, "", "Image Reference")
 	cmd.Flags().StringVar(&cfg.ClusterSpawn.Ports, portsFlag, "", "comma-separated list of ports to expose")
 	cmd.Flags().StringSliceVar(&cfg.ClusterSpawn.Env, envFlag, []string{}, "list of env variables to pass to container")
+}
+
+func AddClusterStopFlags(cmd *cobra.Command, cfg *Config) {
+	cmd.Flags().StringVar(&cfg.ClusterStop.ID, idFlag, "", "id of VM to be stopped")
 }
 
 func BindCommandToViper(cmd *cobra.Command) {
