@@ -18,4 +18,7 @@ type Config struct {
 		Ports    string
 		Env      []string
 	}
+	ClusterStop struct {
+		ID string
+	}
 }

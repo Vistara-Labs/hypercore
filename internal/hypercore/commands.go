@@ -137,6 +137,72 @@ func ClusterSpawnCommand(cfg *Config) *cobra.Command {
 	return cmd
 }
 
+func ClusterStopCommand(cfg *Config) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "stop",
+		Short: "stop a VM in a cluster",
+		PreRunE: func(c *cobra.Command, _ []string) error {
+			BindCommandToViper(c)
+
+			return nil
+		},
+		RunE: func(_ *cobra.Command, _ []string) error {
+			conn, err := grpc.NewClient(cfg.GrpcBindAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			if err != nil {
+				return err
+			}
+			defer conn.Close()
+
+			c := pb.NewClusterServiceClient(conn)
+			resp, err := c.Stop(context.Background(), &pb.VmStopRequest{
+				Id: cfg.ClusterStop.ID,
+			})
+			if err != nil {
+				return err
+			}
+
+			log.Infof("Got response: %v", resp)
+
+			return nil
+		},
+	}
+
+	AddClusterStopFlags(cmd, cfg)
+
+	return cmd
+}
+
+func ClusterListCommand(cfg *Config) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "list VMs in a cluster",
+		PreRunE: func(c *cobra.Command, _ []string) error {
+			BindCommandToViper(c)
+
+			return nil
+		},
+		RunE: func(_ *cobra.Command, _ []string) error {
+			conn, err := grpc.NewClient(cfg.GrpcBindAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			if err != nil {
+				return err
+			}
+			defer conn.Close()
+
+			c := pb.NewClusterServiceClient(conn)
+			resp, err := c.List(context.Background(), &pb.VmQueryRequest{})
+			if err != nil {
+				return err
+			}
+
+			log.Infof("Got response: %+v", resp)
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
 func ClusterCommand(cfg *Config) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cluster",
@@ -203,6 +269,8 @@ func ClusterCommand(cfg *Config) *cobra.Command {
 	}
 
 	cmd.AddCommand(ClusterSpawnCommand(cfg))
+	cmd.AddCommand(ClusterStopCommand(cfg))
+	cmd.AddCommand(ClusterListCommand(cfg))
 
 	// TODO remove hac/vmm flags
 	AddCommonFlags(cmd, cfg)
