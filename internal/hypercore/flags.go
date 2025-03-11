@@ -16,6 +16,7 @@ const (
 	containerdNamespace      = "containerd-ns"
 	vmProviderFlag           = "provider"
 	grpcBindAddrFlag         = "grpc-bind-addr"
+	httpBindAddrFlag         = "http-bind-addr"
 	clusterBindAddrFlag      = "cluster-bind-addr"
 	clusterBaseURLFlag       = "cluster-base-url"
 	clusterTLSCertFlag       = "cluster-tls-cert"
@@ -53,6 +54,7 @@ func AddCommonFlags(cmd *cobra.Command, cfg *Config) {
 
 func AddClusterFlags(cmd *cobra.Command, cfg *Config) {
 	cmd.Flags().StringVar(&cfg.GrpcBindAddr, grpcBindAddrFlag, "0.0.0.0:8000", "GRPC Server bind address")
+	cmd.Flags().StringVar(&cfg.HTTPBindAddr, httpBindAddrFlag, "0.0.0.0:8001", "HTTP Server bind address")
 	cmd.Flags().StringVar(&cfg.ClusterBindAddr, clusterBindAddrFlag, ":7946", "Cluster bind address")
 	cmd.Flags().StringVar(&cfg.ClusterBaseURL, clusterBaseURLFlag, "example.com", "Cluster base URL")
 	cmd.Flags().StringVar(&cfg.ClusterTLSCert, clusterTLSCertFlag, "", "Cluster tls cert path")
