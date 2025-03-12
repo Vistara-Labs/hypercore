@@ -227,16 +227,9 @@ func (a *Agent) handleStopRequest(payload *pb.VmStopRequest) (ret []byte, retErr
 	}
 
 	for _, task := range tasks {
-		container, err := a.ctrRepo.GetContainer(ctx, task.GetID())
-		if err != nil {
-			a.logger.WithError(err).Errorf("failed to get container for task %s", task.GetID())
-
-			continue
-		}
-
-		if container.ID() == payload.GetId() {
+		if task.GetID() == payload.GetId() {
 			_, err := a.ctrRepo.DeleteContainer(ctx, task.GetID())
-			a.logger.WithError(err).Infof("Deleted container: %s", container.ID())
+			a.logger.WithError(err).Infof("Deleted task: %s", task.GetID())
 
 			response, err := wrapClusterMessage(pb.ClusterEvent_STOP, &pb.Node{
 				Id: a.serf.LocalMember().Name,
