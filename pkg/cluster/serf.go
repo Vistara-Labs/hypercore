@@ -588,8 +588,10 @@ func (a *Agent) monitorStateUpdates() {
 	ticker := time.NewTicker(WorkloadBroadcastPeriod)
 	for range ticker.C {
 		a.lastStateMu.Lock()
+		toDelete := make([]string, 0)
 		for node, update := range a.lastStateUpdate {
 			if time.Since(update.receivedAt) > (WorkloadBroadcastPeriod * 3) {
+				toDelete = append(toDelete, node)
 				a.logger.Warnf("Update from node %s last received at %v, re-scheduling workloads", node, update.receivedAt)
 				for _, service := range update.update.GetWorkloads() {
 					go func() {
@@ -601,6 +603,9 @@ func (a *Agent) monitorStateUpdates() {
 					}()
 				}
 			}
+		}
+		for _, node := range toDelete {
+			delete(a.lastStateUpdate, node)
 		}
 		a.lastStateMu.Unlock()
 	}
