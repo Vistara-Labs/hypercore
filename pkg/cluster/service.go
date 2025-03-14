@@ -61,6 +61,16 @@ func NewServer(logger *log.Logger, agent *Agent) (*http.ServeMux, *grpc.Server) 
 	pb.RegisterClusterServiceServer(grpcServer, server)
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/spawn", func(w http.ResponseWriter, r *http.Request) {
+		var request pb.VmSpawnRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			writeResponse(w, nil, err)
+
+			return
+		}
+		response, err := server.Spawn(context.Background(), &request)
+		writeResponse(w, response, err)
+	})
 	mux.HandleFunc("/stop", func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Query().Get("id")
 		response, err := server.Stop(context.Background(), &pb.VmStopRequest{Id: id})
