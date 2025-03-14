@@ -11,6 +11,7 @@ type Config struct {
 	ClusterTLSCert       string
 	ClusterTLSKey        string
 	GrpcBindAddr         string
+	HTTPBindAddr         string
 	ClusterSpawn         struct {
 		CPU      int
 		Memory   int

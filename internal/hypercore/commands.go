@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -241,14 +242,21 @@ func ClusterCommand(cfg *Config) *cobra.Command {
 				}
 			}
 
-			grpcServer := cluster.NewServer(logger, agent)
+			httpServer, grpcServer := cluster.NewServer(logger, agent)
 			grpcListener, err := net.Listen("tcp", cfg.GrpcBindAddr)
 			if err != nil {
 				return err
 			}
 
 			quitWg := sync.WaitGroup{}
-			quitWg.Add(2)
+			quitWg.Add(3)
+
+			go func() {
+				defer quitWg.Done()
+				if err := http.ListenAndServe(cfg.HTTPBindAddr, httpServer); err != nil {
+					panic(err)
+				}
+			}()
 
 			go func() {
 				defer quitWg.Done()

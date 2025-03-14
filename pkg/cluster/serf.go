@@ -96,10 +96,7 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *
 		lastStateUpdate: make(map[string]SavedStatusUpdate),
 	}
 	go agent.monitorWorkloads()
-
-	if respawn {
-		go agent.monitorStateUpdates()
-	}
+	go agent.monitorStateUpdates(respawn)
 
 	return agent, nil
 }
@@ -156,7 +153,7 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 		memUsed += int(labelPayload.GetMemory())
 	}
 
-	if (vcpuUsed + int(payload.GetCores())) > runtime.NumCPU() {
+	if (vcpuUsed + int(payload.GetCores())) > max(runtime.NumCPU(), 10) {
 		return nil, fmt.Errorf("cannot spawn container: have capacity for %d vCPUs, already in use: %d, requested: %d", runtime.NumCPU(), vcpuUsed, payload.GetCores())
 	}
 
@@ -584,7 +581,7 @@ func (a *Agent) monitorWorkloads() {
 	}
 }
 
-func (a *Agent) monitorStateUpdates() {
+func (a *Agent) monitorStateUpdates(respawn bool) {
 	ticker := time.NewTicker(WorkloadBroadcastPeriod)
 	for range ticker.C {
 		a.lastStateMu.Lock()
@@ -592,6 +589,10 @@ func (a *Agent) monitorStateUpdates() {
 		for node, update := range a.lastStateUpdate {
 			if time.Since(update.receivedAt) > (WorkloadBroadcastPeriod * 3) {
 				toDelete = append(toDelete, node)
+				if !respawn {
+					continue
+				}
+
 				a.logger.Warnf("Update from node %s last received at %v, re-scheduling workloads", node, update.receivedAt)
 				for _, service := range update.update.GetWorkloads() {
 					go func() {
