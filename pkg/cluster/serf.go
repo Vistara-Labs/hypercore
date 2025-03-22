@@ -190,7 +190,14 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 			CPUFraction: float64(payload.GetCores()) / float64(runtime.NumCPU()),
 			MemoryBytes: uint64(payload.GetMemory()) * 1024 * 1024,
 		},
-		CioCreator: cio.NewCreator(cio.WithStdio),
+		CioCreator: func(id string) (cio.IO, error) {
+			uri, err := cio.LogURIGenerator("file", "/tmp/hypercore/"+id, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			return cio.LogURI(uri)("")
+		},
 		Labels: map[string]string{
 			SpawnRequestLabel: string(encodedPayload),
 		},
