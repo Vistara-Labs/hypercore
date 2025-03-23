@@ -313,6 +313,7 @@ func ClusterCommand(cfg *Config) *cobra.Command {
 
 	cmd.AddCommand(ClusterSpawnCommand(cfg))
 	cmd.AddCommand(ClusterStopCommand(cfg))
+	cmd.AddCommand(ClusterLogsCommand(cfg))
 	cmd.AddCommand(ClusterListCommand(cfg))
 
 	// TODO remove hac/vmm flags
