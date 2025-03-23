@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 
 	pb "vistara-node/pkg/proto/cluster"
 
@@ -33,6 +34,12 @@ func (s *server) List(_ context.Context, _ *pb.VmQueryRequest) (*pb.NodesStateRe
 	s.logger.Info("Received list request")
 
 	return s.agent.nodeStates(), nil
+}
+
+func (s *server) Logs(_ context.Context, req *pb.VmLogsRequest) (*pb.VmLogsResponse, error) {
+	s.logger.Infof("Received logs request: %v", req)
+
+	return s.agent.LogsRequest(req.GetId())
 }
 
 func writeResponse(w http.ResponseWriter, response interface{}, err error) {
@@ -79,6 +86,12 @@ func NewServer(logger *log.Logger, agent *Agent) (*http.ServeMux, *grpc.Server) 
 	mux.HandleFunc("/list", func(w http.ResponseWriter, _ *http.Request) {
 		response, err := server.List(context.Background(), nil)
 		writeResponse(w, response, err)
+	})
+	mux.HandleFunc("/logs", func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+		// TODO sanitize id
+		logs, err := os.ReadFile("/tmp/hypercore/" + id)
+		writeResponse(w, string(logs), err)
 	})
 
 	return mux, grpcServer

@@ -10,6 +10,7 @@ service ClusterService {
     rpc Spawn(VmSpawnRequest) returns (VmSpawnResponse);
     rpc Stop(VmStopRequest) returns (Node);
     rpc List(VmQueryRequest) returns (NodesStateResponse);
+    rpc Logs(VmLogsRequest) returns (VmLogsResponse);
 }
 
 enum ClusterEvent {
@@ -70,4 +71,12 @@ message VmQueryRequest {
 
 message VmQueryResponse {
     map<string, VmSpawnRequest> vms = 1;
+}
+
+message VmLogsRequest {
+    string id = 1;
+}
+
+message VmLogsResponse {
+    string logs = 1;
 }

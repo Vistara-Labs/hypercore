@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"runtime"
 	"strconv"
 	"sync"
@@ -190,7 +192,14 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 			CPUFraction: float64(payload.GetCores()) / float64(runtime.NumCPU()),
 			MemoryBytes: uint64(payload.GetMemory()) * 1024 * 1024,
 		},
-		CioCreator: cio.NewCreator(cio.WithStdio),
+		CioCreator: func(id string) (cio.IO, error) {
+			uri, err := cio.LogURIGenerator("file", "/tmp/hypercore/"+id, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			return cio.LogURI(uri)("")
+		},
 		Labels: map[string]string{
 			SpawnRequestLabel: string(encodedPayload),
 		},
@@ -481,6 +490,59 @@ func (a *Agent) StopRequest(req *pb.VmStopRequest) (*pb.Node, error) {
 	}
 
 	return nil, errors.New("no success response received from nodes")
+}
+
+func (a *Agent) LogsRequest(id string) (*pb.VmLogsResponse, error) {
+	var member string
+	findWorkload := func(workloads []*pb.WorkloadState) bool {
+		for _, workload := range workloads {
+			if workload.GetId() == id {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	a.lastStateMu.Lock()
+	if findWorkload(a.lastStateSelf.GetWorkloads()) {
+		member = a.lastStateSelf.GetNode().GetId()
+	} else {
+		for node, update := range a.lastStateUpdate {
+			if findWorkload(update.update.GetWorkloads()) {
+				member = node
+
+				break
+			}
+		}
+	}
+	a.lastStateMu.Unlock()
+
+	if member == "" {
+		return nil, fmt.Errorf("workload %s does not exist", id)
+	}
+
+	serfMember := a.findMember(member)
+	if serfMember == nil {
+		return nil, fmt.Errorf("member %s does not exist", member)
+	}
+
+	a.logger.Infof("workload %s found on member %s", id, member)
+
+	url := fmt.Sprintf("http://%s/logs?id=%s", net.JoinHostPort(serfMember.Addr.String(), "8001"), id)
+	//nolint:noctx
+	resp, err := http.DefaultClient.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call node at address %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	logs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read bytes: %w", err)
+	}
+
+	return &pb.VmLogsResponse{Logs: string(logs)}, nil
 }
 
 // broadcast the workloads running on the node every 30 seconds

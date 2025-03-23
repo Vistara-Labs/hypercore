@@ -10,7 +10,6 @@ linters:
     - contextcheck
     - mnd
     - ireturn
-    - gomnd
     - err113
     - funlen
     - gci
@@ -19,6 +18,7 @@ linters:
     - gofumpt
     - gosec
     - lll
+    - tenv
     - depguard
     - nonamedreturns
     - perfsprint

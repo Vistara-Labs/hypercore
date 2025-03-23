@@ -22,4 +22,7 @@ type Config struct {
 	ClusterStop struct {
 		ID string
 	}
+	ClusterLogs struct {
+		ID string
+	}
 }

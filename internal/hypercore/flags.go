@@ -75,6 +75,10 @@ func AddClusterStopFlags(cmd *cobra.Command, cfg *Config) {
 	cmd.Flags().StringVar(&cfg.ClusterStop.ID, idFlag, "", "id of VM to be stopped")
 }
 
+func AddClusterLogsFlags(cmd *cobra.Command, cfg *Config) {
+	cmd.Flags().StringVar(&cfg.ClusterLogs.ID, idFlag, "", "id of VM for fetching logs")
+}
+
 func BindCommandToViper(cmd *cobra.Command) {
 	bindFlagsToViper(cmd.PersistentFlags())
 	bindFlagsToViper(cmd.Flags())
