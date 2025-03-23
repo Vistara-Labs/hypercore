@@ -36,6 +36,12 @@ func (s *server) List(_ context.Context, _ *pb.VmQueryRequest) (*pb.NodesStateRe
 	return s.agent.nodeStates(), nil
 }
 
+func (s *server) Logs(_ context.Context, req *pb.VmLogsRequest) (*pb.VmLogsResponse, error) {
+	s.logger.Infof("Received logs request: %v", req)
+
+	return s.agent.LogsRequest(req.GetId())
+}
+
 func writeResponse(w http.ResponseWriter, response interface{}, err error) {
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
