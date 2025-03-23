@@ -529,7 +529,7 @@ func (a *Agent) LogsRequest(id string) (*pb.VmLogsResponse, error) {
 
 	a.logger.Infof("workload %s found on member %s", id, member)
 
-	url := "http://" + net.JoinHostPort(serfMember.Addr.String(), "8001")
+	url := fmt.Sprintf("http://%s/logs?id=%s", net.JoinHostPort(serfMember.Addr.String(), "8001"), id)
 	//nolint:noctx
 	resp, err := http.DefaultClient.Get(url)
 	if err != nil {
