@@ -173,6 +173,41 @@ func ClusterStopCommand(cfg *Config) *cobra.Command {
 	return cmd
 }
 
+func ClusterLogsCommand(cfg *Config) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "logs",
+		Short: "get logs of a workload in a cluster",
+		PreRunE: func(c *cobra.Command, _ []string) error {
+			BindCommandToViper(c)
+
+			return nil
+		},
+		RunE: func(_ *cobra.Command, _ []string) error {
+			conn, err := grpc.NewClient(cfg.GrpcBindAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			if err != nil {
+				return err
+			}
+			defer conn.Close()
+
+			c := pb.NewClusterServiceClient(conn)
+			resp, err := c.Logs(context.Background(), &pb.VmLogsRequest{
+				Id: cfg.ClusterLogs.ID,
+			})
+			if err != nil {
+				return err
+			}
+
+			log.Infof("Got logs: %s\n", resp.GetLogs())
+
+			return nil
+		},
+	}
+
+	AddClusterLogsFlags(cmd, cfg)
+
+	return cmd
+}
+
 func ClusterListCommand(cfg *Config) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
