@@ -5,7 +5,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -13,6 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: calculate version
+        id: calculate-version
+        uses: bitshifted/git-auto-semver@v1
       - uses: docker/setup-buildx-action@v2
       - uses: docker/build-push-action@v4
         with:
@@ -29,7 +35,14 @@ jobs:
           options: -v ${{ github.workspace }}:/hypercore
           shell: bash
           run: /hypercore/scripts/package.sh
-      - uses: actions/upload-artifact@v4
+      - name: create tag
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag ${{ steps.calculate-version.outputs.version-string }}
+          git push origin ${{ steps.calculate-version.outputs.version-string }}
+      - uses: softprops/action-gh-release@v2
         with:
-          name: hypercore.tar.gz
-          path: hypercore.tar.gz
+          tag_name: ${{ steps.calculate-version.outputs.version-string }}
+          fail_on_unmatched_files: true
+          files: hypercore.tar.gz
