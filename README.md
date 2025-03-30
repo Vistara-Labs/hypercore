@@ -8,6 +8,12 @@ Vistara Hypercore is an advanced Hypervisor Abstraction Layer designed to manage
 - **Hardware-as-Code**: Simplifies infrastructure provisioning using `hac.toml`, enabling specifications that are easy to manage and version.
 - **Comprehensive API Coverage**: Supports both gRPC and HTTP APIs to cater to a broad range of application requirements and developer preferences.
 
+## Usage
+
+- [Joining the hypercore cluster](docs/cluster.md)
+
+- [Spawning applications on hypercore](docs/spawning.md)
+
 ## Getting Started
 
 ### Building
