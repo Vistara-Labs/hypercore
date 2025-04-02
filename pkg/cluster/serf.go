@@ -166,7 +166,7 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 	availableMem /= 1024
 
 	if (memUsed + int(payload.GetMemory())) > int(availableMem) {
-		return nil, fmt.Errorf("cannot spawn container: have capacity for %d MB, already in use: %d MB, requested: %d MB", availableMem, memUsed, payload.GetMemory())
+		a.logger.Warnf("have capacity for %d MB, already in use: %d MB, requested: %d MB", availableMem, memUsed, payload.GetMemory())
 	}
 
 	// We store the request payload as part of the container labels
