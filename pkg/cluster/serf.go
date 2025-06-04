@@ -262,7 +262,7 @@ func (a *Agent) Handler() {
 			query := event.(*serf.Query)
 			a.logger.Infof("Query event: %v", query)
 
-			if query.SourceNode() == a.cfg.NodeName {
+			if false && query.SourceNode() == a.cfg.NodeName {
 				a.logger.Warn("Received event from self node, ignoring")
 
 				continue
