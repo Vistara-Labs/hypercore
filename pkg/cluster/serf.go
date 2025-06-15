@@ -683,7 +683,7 @@ func (a *Agent) monitorWorkloads() {
 				partResp.Node.Ip = id + "_complete"
 			} else if (part + 1) == parts {
 				partResp.Node.Ip = id + "_finish"
-			} else if parts == 0 {
+			} else if part == 0 {
 				partResp.Node.Ip = id + "_begin"
 			} else {
 				partResp.Node.Ip = id + "_part"
