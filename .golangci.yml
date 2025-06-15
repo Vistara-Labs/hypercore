@@ -1,30 +1,48 @@
+version: "2"
 run:
-  go: '1.23'
-  timeout: 5m
+  go: "1.23"
   tests: false
   allow-parallel-runners: true
 linters:
-  enable-all: true
+  default: all
   disable:
-    - cyclop
     - contextcheck
-    - mnd
-    - ireturn
-    - err113
-    - funlen
-    - gci
-    - godox
-    - godot
-    - gofumpt
-    - gosec
-    - lll
-    - tenv
+    - cyclop
     - depguard
+    - err113
+    - exhaustruct
+    - forcetypeassert
+    - funlen
+    - godot
+    - godox
+    - gosec
+    - ireturn
+    - lll
+    - mnd
     - nonamedreturns
     - perfsprint
-    - forcetypeassert
-    - exhaustruct
     - tagliatelle
     - varnamelen
-    - wsl
     - wrapcheck
+    - wsl
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 	vcontainerd "vistara-node/pkg/containerd"
@@ -53,6 +55,7 @@ type Agent struct {
 	lastStateMu     sync.Mutex
 	lastStateSelf   *pb.NodeStateResponse
 	lastStateUpdate map[string]SavedStatusUpdate
+	tmpStateUpdates map[string]*pb.NodeStateResponse
 }
 
 func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *vcontainerd.Repo, tlsConfig *TLSConfig) (*Agent, error) {
@@ -336,12 +339,47 @@ func (a *Agent) Handler() {
 				continue
 			}
 
+			a.logger.Infof("Got partial workloads of node %s IP %v %s", workloads.GetNode().GetId(), member.Addr, workloads.GetNode().GetIp())
+
+			splitID := strings.Split(workloads.GetNode().GetIp(), "_")
+			id, kind := splitID[0], splitID[1]
+
+			switch kind {
+			case "complete":
+				a.tmpStateUpdates[id] = &workloads
+			case "finish":
+				partialWorkloads, ok := a.tmpStateUpdates[id]
+				if !ok {
+					a.logger.Infof("Unknown part for node %s", workloads.GetNode().GetId())
+
+					continue
+				}
+
+				partialWorkloads.Workloads = append(partialWorkloads.Workloads, workloads.GetWorkloads()...)
+			case "begin":
+				a.tmpStateUpdates[id] = &workloads
+
+				continue
+			case "part":
+				partialWorkloads, ok := a.tmpStateUpdates[id]
+				if !ok {
+					a.logger.Infof("Unknown part for node %s", workloads.GetNode().GetId())
+
+					continue
+				}
+
+				partialWorkloads.Workloads = append(partialWorkloads.Workloads, workloads.GetWorkloads()...)
+
+				continue
+			}
+
 			a.logger.Infof("Got workloads of node %s IP %v", workloads.GetNode().GetId(), member.Addr)
 			a.lastStateMu.Lock()
 			a.lastStateUpdate[member.Name] = SavedStatusUpdate{
-				update:     &workloads,
+				update:     a.tmpStateUpdates[id],
 				receivedAt: time.Now(),
 			}
+			delete(a.tmpStateUpdates, id)
 			a.lastStateMu.Unlock()
 
 			for _, service := range workloads.GetWorkloads() {
@@ -630,15 +668,37 @@ func (a *Agent) monitorWorkloads() {
 		a.lastStateSelf = &resp
 		a.lastStateMu.Unlock()
 
-		marshaled, err := proto.Marshal(&resp)
-		if err != nil {
-			a.logger.WithError(err).Error("failed to marshal")
+		// batch size of 10
+		parts := int(math.Ceil(float64(len(resp.GetWorkloads())) / 10))
 
-			continue
-		}
+		id := uuid.NewString()
 
-		if err := a.serf.UserEvent(StateBroadcastEvent, marshaled, true); err != nil {
-			a.logger.WithError(err).Error("failed to broadcast workload state")
+		for part := range parts {
+			partResp := pb.NodeStateResponse{
+				Node:      resp.GetNode(),
+				Workloads: resp.GetWorkloads()[(part * 10):min((part+1)*10, len(resp.GetWorkloads()))],
+			}
+
+			if parts == 1 {
+				partResp.Node.Ip = id + "_complete"
+			} else if (part + 1) == parts {
+				partResp.Node.Ip = id + "_finish"
+			} else if parts == 0 {
+				partResp.Node.Ip = id + "_begin"
+			} else {
+				partResp.Node.Ip = id + "_part"
+			}
+
+			marshaled, err := proto.Marshal(&partResp)
+			if err != nil {
+				a.logger.WithError(err).Error("failed to marshal")
+
+				continue
+			}
+
+			if err := a.serf.UserEvent(StateBroadcastEvent, marshaled, true); err != nil {
+				a.logger.WithError(err).Error("failed to broadcast workload state")
+			}
 		}
 	}
 }
