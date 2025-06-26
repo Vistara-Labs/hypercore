@@ -158,7 +158,7 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 		memUsed += int(labelPayload.GetMemory())
 	}
 
-	if (vcpuUsed + int(payload.GetCores())) > max(runtime.NumCPU(), 100) {
+	if (vcpuUsed + int(payload.GetCores())) > max(runtime.NumCPU(), 300) {
 		return nil, fmt.Errorf("cannot spawn container: have capacity for %d vCPUs, already in use: %d, requested: %d", runtime.NumCPU(), vcpuUsed, payload.GetCores())
 	}
 
