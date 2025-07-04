@@ -49,7 +49,7 @@ mv containerd/containerd containerd/containerd-shim containerd/containerd-shim-r
 
 (mkdir -p cni && cd cni && tar xf ../cni-plugins-linux-amd64-v1.5.1.tgz)
 
-mv cni/firewall cni/ptp bin/
+mv cni/host-local cni/firewall cni/ptp bin/
 mv /go/bin/tc-redirect-tap bin/
 
 strip --strip-all bin/*

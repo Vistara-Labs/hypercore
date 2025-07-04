@@ -99,6 +99,7 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *
 		logger:          logger,
 		ctrRepo:         repo,
 		lastStateUpdate: make(map[string]SavedStatusUpdate),
+		tmpStateUpdates: make(map[string]*pb.NodeStateResponse),
 	}
 	go agent.monitorWorkloads()
 	go agent.monitorStateUpdates(respawn)
