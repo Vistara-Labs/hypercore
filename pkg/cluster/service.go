@@ -8,6 +8,7 @@ import (
 
 	pb "vistara-node/pkg/proto/cluster"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 )
@@ -93,6 +94,9 @@ func NewServer(logger *log.Logger, agent *Agent) (*http.ServeMux, *grpc.Server) 
 		logs, err := os.ReadFile("/tmp/hypercore/" + id)
 		writeResponse(w, string(logs), err)
 	})
+
+	// Add Prometheus metrics endpoint
+	mux.Handle("/metrics", promhttp.Handler())
 
 	return mux, grpcServer
 }
