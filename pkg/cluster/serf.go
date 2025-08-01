@@ -2,6 +2,8 @@ package cluster
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,7 +34,8 @@ const (
 	SpawnRequestLabel   = "hypercore-request-payload"
 	StateBroadcastEvent = "hypercore_state_broadcast"
 
-	WorkloadBroadcastPeriod = time.Second * 5
+	WorkloadBroadcastPeriod = time.Second * 30 // Increased from 5s to 30s
+	MaxQueueDepth           = 1000
 )
 
 type SavedStatusUpdate struct {
@@ -56,6 +60,25 @@ type Agent struct {
 	lastStateSelf   *pb.NodeStateResponse
 	lastStateUpdate map[string]SavedStatusUpdate
 	tmpStateUpdates map[string]*pb.NodeStateResponse
+	lastStateHash   string // Track state hash to detect changes
+	stateMu         sync.Mutex
+}
+
+// hashWorkloadState creates a consistent hash of the workload state
+func (a *Agent) hashWorkloadState(state *pb.NodeStateResponse) string {
+	// Create a deterministic string representation
+	workloadIDs := make([]string, 0, len(state.GetWorkloads()))
+	for _, workload := range state.GetWorkloads() {
+		workloadIDs = append(workloadIDs, workload.GetId())
+	}
+
+	// Sort for consistency
+	sort.Strings(workloadIDs)
+
+	// Create hash
+	hash := sha256.New()
+	hash.Write([]byte(fmt.Sprintf("%d:%s", len(workloadIDs), strings.Join(workloadIDs, ","))))
+	return hex.EncodeToString(hash.Sum(nil))
 }
 
 func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *vcontainerd.Repo, tlsConfig *TLSConfig) (*Agent, error) {
@@ -82,7 +105,14 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *
 	cfg.MemberlistConfig.BindAddr = addr
 	cfg.MemberlistConfig.BindPort = bindPort
 	cfg.MemberlistConfig.AdvertisePort = bindPort
-	cfg.UserEventSizeLimit = 9 * 1024
+	cfg.UserEventSizeLimit = 2048 // Increased event size limit
+
+	// Conservative Serf configuration to reduce queue buildup
+	cfg.MemberlistConfig.GossipInterval = time.Second * 2 // Conservative gossip interval
+	cfg.MemberlistConfig.ProbeInterval = time.Second * 5  // Conservative probe interval
+	cfg.MemberlistConfig.SuspicionMult = 6                // Increased suspicion multiplier for stability
+	cfg.MemberlistConfig.GossipNodes = 2                  // Reduce gossip nodes to decrease load
+
 	cfg.Init()
 
 	serf, err := serf.Create(cfg)
@@ -502,7 +532,7 @@ func (a *Agent) StopRequest(req *pb.VmStopRequest) (*pb.Node, error) {
 	params := a.serf.DefaultQueryParams()
 	// Give 90 seconds to the node to stop the VM
 	params.Timeout = time.Second * 90
-	query, err := a.serf.Query(QueryName, payload, a.serf.DefaultQueryParams())
+	query, err := a.serf.Query(QueryName, payload, params)
 	if err != nil {
 		return nil, err
 	}
@@ -598,7 +628,6 @@ func (a *Agent) monitorWorkloads() {
 		tasks, err := a.ctrRepo.GetTasks(ctx)
 		if err != nil {
 			a.logger.WithError(err).Error("failed to get tasks")
-
 			continue
 		}
 
@@ -614,21 +643,18 @@ func (a *Agent) monitorWorkloads() {
 			container, err := a.ctrRepo.GetContainer(ctx, task.GetID())
 			if err != nil {
 				a.logger.WithError(err).Errorf("failed to get container for task %s", task.GetID())
-
 				continue
 			}
 
 			labels, err := container.Labels(ctx)
 			if err != nil {
 				a.logger.WithError(err).Errorf("failed to get labels for container %s: %s", task.GetID(), err)
-
 				continue
 			}
 
 			var labelPayload pb.VmSpawnRequest
 			if err := json.Unmarshal([]byte(labels[SpawnRequestLabel]), &labelPayload); err != nil {
 				a.logger.Errorf("failed to unmarshal request from label: %s", err)
-
 				continue
 			}
 
@@ -651,7 +677,6 @@ func (a *Agent) monitorWorkloads() {
 			ip, err := a.ctrRepo.GetContainerPrimaryIP(ctx, container.ID())
 			if err != nil {
 				a.logger.Errorf("failed to get IP for container %s: %s", container.ID(), err)
-
 				continue
 			}
 
@@ -668,6 +693,32 @@ func (a *Agent) monitorWorkloads() {
 		a.lastStateMu.Lock()
 		a.lastStateSelf = &resp
 		a.lastStateMu.Unlock()
+
+		// Check if state has actually changed
+		currentHash := a.hashWorkloadState(&resp)
+		a.stateMu.Lock()
+		stateChanged := currentHash != a.lastStateHash
+		if stateChanged {
+			a.lastStateHash = currentHash
+		}
+		a.stateMu.Unlock()
+
+		// Only broadcast if state changed
+		if !stateChanged {
+			a.logger.Debug("State unchanged, skipping broadcast")
+			continue
+		}
+
+		// Check queue depth before broadcasting
+		stats := a.serf.Stats()
+		if queueDepthStr, ok := stats["event_queue_depth"]; ok {
+			if queueDepth, err := strconv.Atoi(queueDepthStr); err == nil {
+				if queueDepth > MaxQueueDepth {
+					a.logger.Warnf("Queue depth %d exceeds limit %d, skipping broadcast", queueDepth, MaxQueueDepth)
+					continue
+				}
+			}
+		}
 
 		// batch size of 10
 		parts := int(math.Ceil(float64(len(resp.GetWorkloads())) / 10))
@@ -693,7 +744,6 @@ func (a *Agent) monitorWorkloads() {
 			marshaled, err := proto.Marshal(&partResp)
 			if err != nil {
 				a.logger.WithError(err).Error("failed to marshal")
-
 				continue
 			}
 
