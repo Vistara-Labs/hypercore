@@ -30,13 +30,12 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-const (
-	QueryName           = "hypercore_query"
-	SpawnRequestLabel   = "hypercore-request-payload"
-	StateBroadcastEvent = "hypercore_state_broadcast"
-
-	WorkloadBroadcastPeriod = time.Second * 30 // Increased from 5s to 30s
-	MaxQueueDepth           = 3600             // Increased for production safety
+var (
+	QueryName               = "hypercore_query"
+	SpawnRequestLabel       = "hypercore-request-payload"
+	StateBroadcastEvent     = "hypercore_state_broadcast"
+	WorkloadBroadcastPeriod = time.Second * 5 // Keep fast for service registration
+	MaxQueueDepth           = 5000
 )
 
 type SavedStatusUpdate struct {
@@ -163,6 +162,11 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *
 		broadcastSkipped: broadcastSkipped,
 		stateChanges:     stateChanges,
 	}
+
+	// Start monitoring workloads and state updates
+	go agent.monitorWorkloads()
+	go agent.monitorStateUpdates(respawn)
+	go agent.Handler()
 
 	return agent, nil
 }
@@ -444,10 +448,13 @@ func (a *Agent) Handler() {
 			a.lastStateMu.Unlock()
 
 			for _, service := range workloads.GetWorkloads() {
-				for port := range service.GetSourceRequest().GetPorts() {
-					addr := fmt.Sprintf("%s:%d", member.Addr.String(), port)
-					if err := a.serviceProxy.Register(port, service.GetId(), addr); err != nil {
-						a.logger.WithError(err).Errorf("failed to register node %s service %s addr %s with proxy", member.Name, service, addr)
+				a.logger.Infof("Registering service %s", service.GetId())
+				for hostPort, containerPort := range service.GetSourceRequest().GetPorts() {
+					a.logger.Infof("Registering service %s on port %d", service.GetId(), hostPort)
+					addr := fmt.Sprintf("%s:%d", member.Addr.String(), containerPort)
+					a.logger.Infof("Registering service %s on port %d", service.GetId(), hostPort)
+					if err := a.serviceProxy.Register(hostPort, service.GetId(), addr); err != nil {
+						a.logger.WithError(err).Errorf("failed to register node %s service %s addr %s with proxy", member.Name, service.GetId(), addr)
 
 						continue
 					}
@@ -744,6 +751,8 @@ func (a *Agent) monitorWorkloads() {
 			continue
 		}
 
+		a.logger.Infof("State changed, broadcasting %d workloads", len(resp.GetWorkloads()))
+
 		// Check queue depth before broadcasting
 		stats := a.serf.Stats()
 		if queueDepthStr, ok := stats["event_queue_depth"]; ok {
@@ -756,13 +765,17 @@ func (a *Agent) monitorWorkloads() {
 					a.logger.Infof("Queue depth: %d (monitoring)", queueDepth)
 				}
 
-				if queueDepth > MaxQueueDepth {
-					a.logger.Warnf("Queue depth %d exceeds limit %d, skipping broadcast to prevent message drops", queueDepth, MaxQueueDepth)
+				// Critical state updates must always be broadcast for service registration
+				// Only skip if queue depth is extremely high to prevent system overload
+				if queueDepth > MaxQueueDepth*2 {
+					a.logger.Warnf("Queue depth %d exceeds limit %d, skipping broadcast to prevent system overload", queueDepth, MaxQueueDepth*2)
 					a.broadcastSkipped.Inc()
 					continue
 				}
 			}
 		}
+
+		a.logger.Infof("Broadcasting state update with %d workloads", len(resp.GetWorkloads()))
 
 		// Update workload count metric
 		a.workloadCount.Set(float64(len(resp.GetWorkloads())))
@@ -802,6 +815,8 @@ func (a *Agent) monitorWorkloads() {
 
 			if err := a.serf.UserEvent(StateBroadcastEvent, marshaled, true); err != nil {
 				a.logger.WithError(err).Error("failed to broadcast workload state")
+			} else {
+				a.logger.Infof("Successfully broadcast state update part %d/%d", part+1, parts)
 			}
 		}
 	}
