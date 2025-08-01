@@ -2,6 +2,8 @@ package cluster
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +25,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/hashicorp/serf/serf"
 	log "github.com/sirupsen/logrus"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
@@ -31,7 +36,8 @@ const (
 	SpawnRequestLabel   = "hypercore-request-payload"
 	StateBroadcastEvent = "hypercore_state_broadcast"
 
-	WorkloadBroadcastPeriod = time.Second * 5
+	WorkloadBroadcastPeriod = time.Second * 30 // Increased from 5s to 30s
+	MaxQueueDepth           = 3600 // Increased for production safety
 )
 
 type SavedStatusUpdate struct {
@@ -56,6 +62,31 @@ type Agent struct {
 	lastStateSelf   *pb.NodeStateResponse
 	lastStateUpdate map[string]SavedStatusUpdate
 	tmpStateUpdates map[string]*pb.NodeStateResponse
+	lastStateHash   string // Track state hash to detect changes
+	stateMu         sync.Mutex
+	
+	// Prometheus metrics
+	serfQueueDepth    prometheus.Gauge
+	workloadCount     prometheus.Gauge
+	broadcastSkipped  prometheus.Counter
+	stateChanges      prometheus.Counter
+}
+
+// hashWorkloadState creates a consistent hash of the workload state
+func (a *Agent) hashWorkloadState(state *pb.NodeStateResponse) string {
+	// Create a deterministic string representation
+	workloadIDs := make([]string, 0, len(state.GetWorkloads()))
+	for _, workload := range state.GetWorkloads() {
+		workloadIDs = append(workloadIDs, workload.GetId())
+	}
+
+	// Sort for consistency
+	sort.Strings(workloadIDs)
+
+	// Create hash
+	hash := sha256.New()
+	hash.Write([]byte(fmt.Sprintf("%d:%s", len(workloadIDs), strings.Join(workloadIDs, ","))))
+	return hex.EncodeToString(hash.Sum(nil))
 }
 
 func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *vcontainerd.Repo, tlsConfig *TLSConfig) (*Agent, error) {
@@ -82,13 +113,41 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *
 	cfg.MemberlistConfig.BindAddr = addr
 	cfg.MemberlistConfig.BindPort = bindPort
 	cfg.MemberlistConfig.AdvertisePort = bindPort
-	cfg.UserEventSizeLimit = 9 * 1024
+	cfg.UserEventSizeLimit = 2048 // Increased event size limit
+
+	// Conservative Serf configuration to reduce queue buildup
+	cfg.MemberlistConfig.GossipInterval = time.Second * 2 // Conservative gossip interval
+	cfg.MemberlistConfig.ProbeInterval = time.Second * 5  // Conservative probe interval
+	cfg.MemberlistConfig.SuspicionMult = 6                // Increased suspicion multiplier for stability
+	cfg.MemberlistConfig.GossipNodes = 2                  // Reduce gossip nodes to decrease load
+
 	cfg.Init()
 
 	serf, err := serf.Create(cfg)
 	if err != nil {
 		return nil, err
 	}
+
+	// Initialize Prometheus metrics
+	serfQueueDepth := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "hypercore_serf_queue_depth",
+		Help: "Current Serf event queue depth",
+	})
+	workloadCount := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "hypercore_workload_count",
+		Help: "Number of running workloads on this node",
+	})
+	broadcastSkipped := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hypercore_broadcast_skipped_total",
+		Help: "Total number of broadcasts skipped due to queue depth",
+	})
+	stateChanges := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hypercore_state_changes_total",
+		Help: "Total number of state changes detected",
+	})
+
+	// Register metrics
+	prometheus.MustRegister(serfQueueDepth, workloadCount, broadcastSkipped, stateChanges)
 
 	agent := &Agent{
 		eventCh:         eventCh,
@@ -100,9 +159,11 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *
 		ctrRepo:         repo,
 		lastStateUpdate: make(map[string]SavedStatusUpdate),
 		tmpStateUpdates: make(map[string]*pb.NodeStateResponse),
+		serfQueueDepth:  serfQueueDepth,
+		workloadCount:   workloadCount,
+		broadcastSkipped: broadcastSkipped,
+		stateChanges:    stateChanges,
 	}
-	go agent.monitorWorkloads()
-	go agent.monitorStateUpdates(respawn)
 
 	return agent, nil
 }
@@ -668,6 +729,49 @@ func (a *Agent) monitorWorkloads() {
 		a.lastStateMu.Lock()
 		a.lastStateSelf = &resp
 		a.lastStateMu.Unlock()
+
+		// Check if state has actually changed
+		currentHash := a.hashWorkloadState(&resp)
+		a.stateMu.Lock()
+		stateChanged := currentHash != a.lastStateHash
+		if stateChanged {
+			a.lastStateHash = currentHash
+		}
+		a.stateMu.Unlock()
+
+		// Only broadcast if state changed
+		if !stateChanged {
+			a.logger.Debug("State unchanged, skipping broadcast")
+			continue
+		}
+
+		// Check queue depth before broadcasting
+		stats := a.serf.Stats()
+		if queueDepthStr, ok := stats["event_queue_depth"]; ok {
+			if queueDepth, err := strconv.Atoi(queueDepthStr); err == nil {
+				// Update Prometheus metric
+				a.serfQueueDepth.Set(float64(queueDepth))
+
+				// Log queue depth for monitoring
+				if queueDepth > 1000 {
+					a.logger.Infof("Queue depth: %d (monitoring)", queueDepth)
+				}
+
+				if queueDepth > MaxQueueDepth {
+					a.logger.Warnf("Queue depth %d exceeds limit %d, skipping broadcast to prevent message drops", queueDepth, MaxQueueDepth)
+					a.broadcastSkipped.Inc()
+					continue
+				}
+			}
+		}
+
+		// Update workload count metric
+		a.workloadCount.Set(float64(len(resp.GetWorkloads())))
+
+		// Increment state changes counter
+		if stateChanged {
+			a.stateChanges.Inc()
+		}
 
 		// batch size of 10
 		parts := int(math.Ceil(float64(len(resp.GetWorkloads())) / 10))
