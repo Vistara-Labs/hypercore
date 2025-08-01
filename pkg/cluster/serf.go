@@ -24,9 +24,8 @@ import (
 	"github.com/containerd/containerd/cio"
 	"github.com/google/uuid"
 	"github.com/hashicorp/serf/serf"
-	log "github.com/sirupsen/logrus"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	log "github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
@@ -37,7 +36,7 @@ const (
 	StateBroadcastEvent = "hypercore_state_broadcast"
 
 	WorkloadBroadcastPeriod = time.Second * 30 // Increased from 5s to 30s
-	MaxQueueDepth           = 3600 // Increased for production safety
+	MaxQueueDepth           = 3600             // Increased for production safety
 )
 
 type SavedStatusUpdate struct {
@@ -64,12 +63,12 @@ type Agent struct {
 	tmpStateUpdates map[string]*pb.NodeStateResponse
 	lastStateHash   string // Track state hash to detect changes
 	stateMu         sync.Mutex
-	
+
 	// Prometheus metrics
-	serfQueueDepth    prometheus.Gauge
-	workloadCount     prometheus.Gauge
-	broadcastSkipped  prometheus.Counter
-	stateChanges      prometheus.Counter
+	serfQueueDepth   prometheus.Gauge
+	workloadCount    prometheus.Gauge
+	broadcastSkipped prometheus.Counter
+	stateChanges     prometheus.Counter
 }
 
 // hashWorkloadState creates a consistent hash of the workload state
@@ -150,19 +149,19 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *
 	prometheus.MustRegister(serfQueueDepth, workloadCount, broadcastSkipped, stateChanges)
 
 	agent := &Agent{
-		eventCh:         eventCh,
-		cfg:             cfg,
-		baseURL:         baseURL,
-		serviceProxy:    serviceProxy,
-		serf:            serf,
-		logger:          logger,
-		ctrRepo:         repo,
-		lastStateUpdate: make(map[string]SavedStatusUpdate),
-		tmpStateUpdates: make(map[string]*pb.NodeStateResponse),
-		serfQueueDepth:  serfQueueDepth,
-		workloadCount:   workloadCount,
+		eventCh:          eventCh,
+		cfg:              cfg,
+		baseURL:          baseURL,
+		serviceProxy:     serviceProxy,
+		serf:             serf,
+		logger:           logger,
+		ctrRepo:          repo,
+		lastStateUpdate:  make(map[string]SavedStatusUpdate),
+		tmpStateUpdates:  make(map[string]*pb.NodeStateResponse),
+		serfQueueDepth:   serfQueueDepth,
+		workloadCount:    workloadCount,
 		broadcastSkipped: broadcastSkipped,
-		stateChanges:    stateChanges,
+		stateChanges:     stateChanges,
 	}
 
 	return agent, nil
