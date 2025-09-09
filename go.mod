@@ -1,8 +1,11 @@
-module vistara-node
+module vistara/hypercore
 
 go 1.23.0
 
+toolchain go1.24.5
+
 require (
+	github.com/NVIDIA/go-nvml v0.12.0-1
 	github.com/containerd/containerd/api v1.8.0
 	github.com/containerd/log v0.1.0
 	github.com/containerd/ttrpc v1.2.7
@@ -15,10 +18,10 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/serf v0.10.2
-	github.com/NVIDIA/go-nvml v0.12.0
 	github.com/opencontainers/runtime-spec v1.2.1
 	github.com/prometheus/client_golang v1.20.2
 	github.com/spf13/viper v1.20.0
+	github.com/stretchr/testify v1.10.0
 	github.com/vistara-labs/firecracker-containerd v0.0.0-20240707190021-1287a7cb7490
 	google.golang.org/grpc v1.71.0
 	google.golang.org/protobuf v1.36.5
@@ -102,7 +105,6 @@ require (
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/shirou/gopsutil v3.21.11+incompatible // indirect
-	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.15 // indirect
 	github.com/tklauser/numcpus v0.10.0 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect

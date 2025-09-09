@@ -3,7 +3,7 @@ package mig
 import (
 	"fmt"
 
-	"github.com/NVIDIA/go-nvml"
+	"github.com/NVIDIA/go-nvml/pkg/nvml"
 )
 
 // EnableMIGMode enables MIG mode on the specified device

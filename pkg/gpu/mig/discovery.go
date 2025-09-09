@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/NVIDIA/go-nvml"
-	"vistara-node/pkg/types"
+	"github.com/NVIDIA/go-nvml/pkg/nvml"
+	"vistara/hypercore/pkg/types"
 )
 
 // GPUDeviceInfo wraps NVML device with additional metadata

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"vistara-node/pkg/api"
+	"vistara/hypercore/pkg/api"
 )
 
 func main() {
