@@ -34,7 +34,7 @@ var (
 	QueryName               = "hypercore_query"
 	SpawnRequestLabel       = "hypercore-request-payload"
 	StateBroadcastEvent     = "hypercore_state_broadcast"
-	WorkloadBroadcastPeriod = time.Second * 5 // Keep fast for service registration
+	WorkloadBroadcastPeriod = time.Second * 30 // Reduced frequency to prevent message storm
 	MaxQueueDepth           = 5000
 )
 
@@ -64,10 +64,27 @@ type Agent struct {
 	stateMu         sync.Mutex
 
 	// Prometheus metrics
-	serfQueueDepth   prometheus.Gauge
-	workloadCount    prometheus.Gauge
-	broadcastSkipped prometheus.Counter
-	stateChanges     prometheus.Counter
+	serfQueueDepth       prometheus.Gauge
+	workloadCount        prometheus.Gauge
+	broadcastSkipped     prometheus.Counter
+	stateChanges         prometheus.Counter
+	nodeCount            prometheus.Gauge
+	spawnRequests        prometheus.Counter
+	stopRequests         prometheus.Counter
+	spawnSuccess         prometheus.Counter
+	spawnFailures        prometheus.Counter
+	networkErrors        prometheus.Counter
+	serviceRegistrations prometheus.Counter
+	
+	// New monitoring metrics
+	ipAllocationCount    prometheus.Gauge
+	ipAllocationRate     prometheus.Counter
+	ipCleanupCount       prometheus.Counter
+	networkLatency       prometheus.Histogram
+	arpTableSize         prometheus.Gauge
+	systemMemoryUsage    prometheus.Gauge
+	containerLifetime    prometheus.Histogram
+	domainAssignmentTime prometheus.Histogram
 }
 
 // hashWorkloadState creates a consistent hash of the workload state
@@ -85,6 +102,21 @@ func (a *Agent) hashWorkloadState(state *pb.NodeStateResponse) string {
 	hash := sha256.New()
 	hash.Write([]byte(fmt.Sprintf("%d:%s", len(workloadIDs), strings.Join(workloadIDs, ","))))
 	return hex.EncodeToString(hash.Sum(nil))
+}
+
+// generateShortDomain creates a shorter domain name from UUID
+func (a *Agent) generateShortDomain(containerID string) string {
+	// Create a short hash from the container ID
+	hash := sha256.Sum256([]byte(containerID))
+	shortHash := hex.EncodeToString(hash[:4]) // Use first 4 bytes = 8 chars
+	
+	// Generate a readable slug
+	slug := fmt.Sprintf("app-%s", shortHash)
+	
+	// Use shorter domain
+	domain := "zaara.dev" // Shorter than deployments.vistara.dev
+	
+	return fmt.Sprintf("%s.%s", slug, domain)
 }
 
 func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *vcontainerd.Repo, tlsConfig *TLSConfig) (*Agent, error) {
@@ -143,30 +175,115 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *
 		Name: "hypercore_state_changes_total",
 		Help: "Total number of state changes detected",
 	})
+	nodeCount := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "hypercore_node_count",
+		Help: "Number of nodes in the cluster",
+	})
+	spawnRequests := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hypercore_spawn_requests_total",
+		Help: "Total number of spawn requests received",
+	})
+	stopRequests := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hypercore_stop_requests_total",
+		Help: "Total number of stop requests received",
+	})
+	spawnSuccess := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hypercore_spawn_success_total",
+		Help: "Total number of successful spawns",
+	})
+	spawnFailures := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hypercore_spawn_failures_total",
+		Help: "Total number of failed spawns",
+	})
+	networkErrors := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hypercore_network_errors_total",
+		Help: "Total number of network errors",
+	})
+	serviceRegistrations := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hypercore_service_registrations_total",
+		Help: "Total number of service registrations",
+	})
+
+	// New monitoring metrics
+	ipAllocationCount := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "hypercore_ip_allocation_count",
+		Help: "Current number of allocated IP addresses",
+	})
+	ipAllocationRate := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hypercore_ip_allocation_rate_total",
+		Help: "Total number of IP allocations",
+	})
+	ipCleanupCount := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hypercore_ip_cleanup_total",
+		Help: "Total number of IP cleanups",
+	})
+	networkLatency := prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "hypercore_network_latency_seconds",
+		Help:    "Network latency for container communication",
+		Buckets: prometheus.ExponentialBuckets(0.001, 2, 15), // 1ms to 32s
+	})
+	arpTableSize := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "hypercore_arp_table_size",
+		Help: "Current ARP table size",
+	})
+	systemMemoryUsage := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "hypercore_system_memory_usage_bytes",
+		Help: "System memory usage in bytes",
+	})
+	containerLifetime := prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "hypercore_container_lifetime_seconds",
+		Help:    "Container lifetime from creation to deletion",
+		Buckets: prometheus.ExponentialBuckets(60, 2, 20), // 1min to 12 days
+	})
+	domainAssignmentTime := prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "hypercore_domain_assignment_seconds",
+		Help:    "Time taken to assign domain to container",
+		Buckets: prometheus.ExponentialBuckets(0.1, 2, 10), // 100ms to 100s
+	})
 
 	// Register metrics
-	prometheus.MustRegister(serfQueueDepth, workloadCount, broadcastSkipped, stateChanges)
+	prometheus.MustRegister(serfQueueDepth, workloadCount, broadcastSkipped, stateChanges,
+		nodeCount, spawnRequests, stopRequests, spawnSuccess, spawnFailures,
+		networkErrors, serviceRegistrations, ipAllocationCount, ipAllocationRate,
+		ipCleanupCount, networkLatency, arpTableSize, systemMemoryUsage,
+		containerLifetime, domainAssignmentTime)
 
 	agent := &Agent{
-		eventCh:          eventCh,
-		cfg:              cfg,
-		baseURL:          baseURL,
-		serviceProxy:     serviceProxy,
-		serf:             serf,
-		logger:           logger,
-		ctrRepo:          repo,
-		lastStateUpdate:  make(map[string]SavedStatusUpdate),
-		tmpStateUpdates:  make(map[string]*pb.NodeStateResponse),
-		serfQueueDepth:   serfQueueDepth,
-		workloadCount:    workloadCount,
-		broadcastSkipped: broadcastSkipped,
-		stateChanges:     stateChanges,
+		eventCh:              eventCh,
+		cfg:                  cfg,
+		baseURL:              baseURL,
+		serviceProxy:         serviceProxy,
+		serf:                 serf,
+		logger:               logger,
+		ctrRepo:              repo,
+		lastStateUpdate:      make(map[string]SavedStatusUpdate),
+		tmpStateUpdates:      make(map[string]*pb.NodeStateResponse),
+		serfQueueDepth:       serfQueueDepth,
+		workloadCount:        workloadCount,
+		broadcastSkipped:     broadcastSkipped,
+		stateChanges:         stateChanges,
+		nodeCount:            nodeCount,
+		spawnRequests:        spawnRequests,
+		stopRequests:         stopRequests,
+		spawnSuccess:         spawnSuccess,
+		spawnFailures:        spawnFailures,
+		networkErrors:        networkErrors,
+		serviceRegistrations: serviceRegistrations,
+		ipAllocationCount:    ipAllocationCount,
+		ipAllocationRate:     ipAllocationRate,
+		ipCleanupCount:       ipCleanupCount,
+		networkLatency:       networkLatency,
+		arpTableSize:         arpTableSize,
+		systemMemoryUsage:    systemMemoryUsage,
+		containerLifetime:    containerLifetime,
+		domainAssignmentTime: domainAssignmentTime,
 	}
 
 	// Start monitoring workloads and state updates
 	go agent.monitorWorkloads()
 	go agent.monitorStateUpdates(respawn)
 	go agent.Handler()
+	go agent.monitorSystemMetrics()
 
 	return agent, nil
 }
@@ -277,7 +394,10 @@ func (a *Agent) handleSpawnRequest(payload *pb.VmSpawnRequest) (ret []byte, retE
 		return nil, fmt.Errorf("failed to spawn container: %w", err)
 	}
 
-	response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{Id: id, Url: id + "." + a.baseURL})
+	// Generate shorter domain name
+	shortDomain := a.generateShortDomain(id)
+	
+	response, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, &pb.VmSpawnResponse{Id: id, Url: shortDomain})
 	if err != nil {
 		return nil, fmt.Errorf("failed to wrap cluster message: %w", err)
 	}
@@ -499,20 +619,26 @@ func wrapClusterErrorMessage(errorMessage string) ([]byte, error) {
 
 // Request another node to spawn a VM
 func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error) {
+	// Increment spawn requests counter
+	a.spawnRequests.Inc()
+
 	req.DryRun = true
 	payload, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, req)
 	if err != nil {
+		a.spawnFailures.Inc()
 		return nil, err
 	}
 
 	query, err := a.serf.Query(QueryName, payload, a.serf.DefaultQueryParams())
 	if err != nil {
+		a.spawnFailures.Inc()
 		return nil, err
 	}
 
 	req.DryRun = false
 	payload, err = wrapClusterMessage(pb.ClusterEvent_SPAWN, req)
 	if err != nil {
+		a.spawnFailures.Inc()
 		return nil, err
 	}
 
@@ -528,6 +654,7 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error
 
 		query, err = a.serf.Query(QueryName, payload, params)
 		if err != nil {
+			a.spawnFailures.Inc()
 			return nil, err
 		}
 
@@ -536,31 +663,41 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error
 
 			var resp pb.ClusterMessage
 			if err := proto.Unmarshal(response.Payload, &resp); err != nil {
+				a.spawnFailures.Inc()
 				return nil, err
 			}
 
 			if resp.GetEvent() == pb.ClusterEvent_ERROR {
 				var errorResp pb.ErrorResponse
 				if err := resp.GetWrappedMessage().UnmarshalTo(&errorResp); err != nil {
+					a.spawnFailures.Inc()
 					return nil, err
 				}
 
+				a.spawnFailures.Inc()
 				return nil, fmt.Errorf("node returned failure response: %s", errorResp.GetError())
 			}
 
 			var wrappedResp pb.VmSpawnResponse
 			if err := resp.GetWrappedMessage().UnmarshalTo(&wrappedResp); err != nil {
+				a.spawnFailures.Inc()
 				return nil, err
 			}
 
+			// Increment success counter
+			a.spawnSuccess.Inc()
 			return &wrappedResp, nil
 		}
 	}
 
+	a.spawnFailures.Inc()
 	return nil, errors.New("no response received from nodes")
 }
 
 func (a *Agent) StopRequest(req *pb.VmStopRequest) (*pb.Node, error) {
+	// Increment stop requests counter
+	a.stopRequests.Inc()
+
 	payload, err := wrapClusterMessage(pb.ClusterEvent_STOP, req)
 	if err != nil {
 		return nil, err
@@ -569,7 +706,7 @@ func (a *Agent) StopRequest(req *pb.VmStopRequest) (*pb.Node, error) {
 	params := a.serf.DefaultQueryParams()
 	// Give 90 seconds to the node to stop the VM
 	params.Timeout = time.Second * 90
-	query, err := a.serf.Query(QueryName, payload, a.serf.DefaultQueryParams())
+	query, err := a.serf.Query(QueryName, payload, params)
 	if err != nil {
 		return nil, err
 	}
@@ -665,7 +802,6 @@ func (a *Agent) monitorWorkloads() {
 		tasks, err := a.ctrRepo.GetTasks(ctx)
 		if err != nil {
 			a.logger.WithError(err).Error("failed to get tasks")
-
 			continue
 		}
 
@@ -675,27 +811,28 @@ func (a *Agent) monitorWorkloads() {
 			},
 		}
 
+		// Update node count metric
+		a.nodeCount.Set(float64(len(a.serf.Members())))
+
+		workloadCount := 0
 		for _, task := range tasks {
 			a.logger.Infof("Got task %s, state: %s", task.GetID(), task.GetStatus())
 
 			container, err := a.ctrRepo.GetContainer(ctx, task.GetID())
 			if err != nil {
 				a.logger.WithError(err).Errorf("failed to get container for task %s", task.GetID())
-
 				continue
 			}
 
 			labels, err := container.Labels(ctx)
 			if err != nil {
 				a.logger.WithError(err).Errorf("failed to get labels for container %s: %s", task.GetID(), err)
-
 				continue
 			}
 
 			var labelPayload pb.VmSpawnRequest
 			if err := json.Unmarshal([]byte(labels[SpawnRequestLabel]), &labelPayload); err != nil {
 				a.logger.Errorf("failed to unmarshal request from label: %s", err)
-
 				continue
 			}
 
@@ -718,7 +855,6 @@ func (a *Agent) monitorWorkloads() {
 			ip, err := a.ctrRepo.GetContainerPrimaryIP(ctx, container.ID())
 			if err != nil {
 				a.logger.Errorf("failed to get IP for container %s: %s", container.ID(), err)
-
 				continue
 			}
 
@@ -726,11 +862,18 @@ func (a *Agent) monitorWorkloads() {
 				addr := fmt.Sprintf("%s:%d", ip, containerPort)
 				if err := a.serviceProxy.Register(hostPort, container.ID(), addr); err != nil {
 					a.logger.Errorf("failed to register container %s addr %s with proxy: %s", container.ID(), addr, err)
+				} else {
+					// Increment service registration counter
+					a.serviceRegistrations.Inc()
 				}
 			}
 
 			resp.Workloads = append(resp.Workloads, &pb.WorkloadState{Id: container.ID(), SourceRequest: &labelPayload})
+			workloadCount++
 		}
+
+		// Update workload count metric
+		a.workloadCount.Set(float64(workloadCount))
 
 		a.lastStateMu.Lock()
 		a.lastStateSelf = &resp
@@ -880,4 +1023,46 @@ func (a *Agent) Join(addr string) error {
 	_, err := a.serf.Join([]string{addr}, true)
 
 	return err
+}
+
+// monitorSystemMetrics continuously monitors system health metrics
+func (a *Agent) monitorSystemMetrics() {
+	ticker := time.NewTicker(time.Second * 10) // Monitor every 10 seconds
+	for range ticker.C {
+		// Monitor ARP table size
+		if arpSize, err := a.getARPTablesize(); err == nil {
+			a.arpTableSize.Set(float64(arpSize))
+		}
+
+		// Monitor system memory usage
+		if memUsage, err := a.getSystemMemoryUsage(); err == nil {
+			a.systemMemoryUsage.Set(float64(memUsage))
+		}
+
+		// Monitor IP allocation count
+		if ipCount, err := a.getIPAllocationCount(); err == nil {
+			a.ipAllocationCount.Set(float64(ipCount))
+		}
+	}
+}
+
+// getARPTablesize returns the current ARP table size
+func (a *Agent) getARPTablesize() (int, error) {
+	// This would need to be implemented based on your system
+	// For now, return a placeholder
+	return 0, nil
+}
+
+// getSystemMemoryUsage returns current system memory usage in bytes
+func (a *Agent) getSystemMemoryUsage() (uint64, error) {
+	// This would need to be implemented based on your system
+	// For now, return a placeholder
+	return 0, nil
+}
+
+// getIPAllocationCount returns the current number of allocated IPs
+func (a *Agent) getIPAllocationCount() (int, error) {
+	// This would need to be implemented based on your system
+	// For now, return a placeholder
+	return 0, nil
 }

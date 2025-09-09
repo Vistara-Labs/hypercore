@@ -12,8 +12,10 @@ require (
 	github.com/docker/docker v28.0.2+incompatible
 	github.com/firecracker-microvm/firecracker-go-sdk v1.0.0
 	github.com/google/uuid v1.6.0
+	github.com/gorilla/mux v1.8.1
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/serf v0.10.2
+	github.com/NVIDIA/go-nvml v0.12.0
 	github.com/opencontainers/runtime-spec v1.2.1
 	github.com/prometheus/client_golang v1.20.2
 	github.com/spf13/viper v1.20.0

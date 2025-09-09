@@ -7,12 +7,15 @@ Vistara Hypercore is an advanced Hypervisor Abstraction Layer designed to manage
 - **Multi-Hypervisor Support**: Seamless integration with multiple hypervisors including Firecracker, Cloud Hypervisor, and potentially Unikernels for optimized resource utilization.
 - **Hardware-as-Code**: Simplifies infrastructure provisioning using `hac.toml`, enabling specifications that are easy to manage and version.
 - **Comprehensive API Coverage**: Supports both gRPC and HTTP APIs to cater to a broad range of application requirements and developer preferences.
+- **GPU Integration**: Advanced GPU sub-scheduling with CUDA shim, VRAM quotas, and process isolation.
+- **MIG Support**: NVIDIA MIG (Multi-Instance GPU) integration with NVML-based discovery and automatic device reservation.
 
 ## Usage
 
 - [Joining the hypercore cluster](docs/cluster.md)
-
 - [Spawning applications on hypercore](docs/spawning.md)
+- [GPU Integration Guide](docs/GPU_INTEGRATION.md)
+- [MIG Integration Guide](docs/MIG_INTEGRATION.md)
 
 ## Getting Started
 
@@ -27,7 +30,12 @@ git clone https://github.com/vistara-labs/hypercore.git
 Build the unified hypercore binary for spawning and managing the lifecycle of MicroVMs. Depending on the binary name it either runs the hypercore CLI, or the containerd shim. The shim must be present in `$PATH` so we can symlink it to `/usr/local/bin`:
 
 ```bash
+# Standard build (no GPU support)
 $ make build
+
+# GPU build with MIG support (requires CGO)
+$ make build-gpu
+
 # Assuming /usr/local/bin is in $PATH, we can symlink the binary there
 $ sudo ln -s $PWD/bin/containerd-shim-hypercore-example /usr/local/bin/
 ```

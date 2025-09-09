@@ -28,7 +28,7 @@ Let’s say we deploy a workload `X`, it will be publicly exposed via a unique i
 https://497b---.deployments.vistara.dev -> Host Header: 497b---.deployments.vistara.dev  -> Identifier (497b...) -> 192.168.127.15
                                            Port: 443                                        Port (443) -> 8080
 ```
-
+ curl -X POST https://api.deployments.vistara.dev:8443/spawn -H "Content-Type: application/json" -d '{"cores": 1, "memory": 512, "image_ref": "registry.vistara.dev/75bbb1e1-1cc3-45fa-8a6c-fd6b99aac5d5:ea3babb98ecd05e1408e17e1da8f43c88a421ad7", "ports": {"443": 3000}, "env": ["OPENAI_API_KEY=sk-or-v1", "SUPABASE_URL=https://enlsvqrfgktlndrnbojk.supabase.co", "SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", "GITHUB_ORG=vistara-apps"], "dry_run": false}' | jq 
 ## Installation & Usage
 
 1. Download `hypercore-vX.Y.Z.tar.gz` from the hypercore repo and extract it to `/opt`. This contains the hypercore binary itself, along with all the dependencies like `containerd`, `cloud-hypervisor`, `firecracker` & `runc`:

@@ -239,7 +239,7 @@ func (r *Repo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_
         "ipMasq": true,
         "ipam": {
           "type": "host-local",
-          "subnet": "192.168.127.0/24",
+          "subnet": "192.168.0.0/16",
           "resolvConf": "/etc/resolv.conf",
           "routes": [
             { "dst": "0.0.0.0/0" }
@@ -273,6 +273,9 @@ func (r *Repo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_
 	if err != nil {
 		return "", fmt.Errorf("failed to add CNI network list: %w", err)
 	}
+
+	// Track IP allocation metrics
+	log.WithContext(ctx).Infof("Successfully allocated IP for container %s", containerID)
 
 	task, err := container.NewTask(namespaceCtx, opts.CioCreator)
 	if err != nil {
@@ -342,6 +345,22 @@ func (r *Repo) DeleteContainer(ctx context.Context, containerID string) (uint32,
 
 	if _, err := task.Delete(namespaceCtx); err != nil {
 		return 0, fmt.Errorf("failed to delete task: %w", err)
+	}
+
+	// Clean up CNI network to free IP addresses
+	if err := libcni.NewCNIConfig([]string{"/opt/hypercore/bin", "/opt/cni/bin"}, nil).DelNetworkList(
+		namespaceCtx, &libcni.NetworkConfigList{
+			Name:       "hypercore-cni",
+			CNIVersion: "0.4.0",
+		}, &libcni.RuntimeConf{
+			ContainerID: containerID,
+			IfName:      "eth0",
+		},
+	); err != nil {
+		log.WithContext(ctx).Warnf("failed to cleanup CNI network for container %s: %v", containerID, err)
+		// Don't fail the deletion if CNI cleanup fails
+	} else {
+		log.WithContext(ctx).Infof("Successfully cleaned up IP for container %s", containerID)
 	}
 
 	if err := container.Delete(namespaceCtx, containerd.WithSnapshotCleanup); err != nil {
