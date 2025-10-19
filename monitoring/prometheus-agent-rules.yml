@@ -1,0 +1,155 @@
+# Prometheus alerting rules for Claude Agent SDK
+groups:
+  - name: claude_agent_alerts
+    interval: 30s
+    rules:
+      # High error rate alert
+      - alert: HighAgentErrorRate
+        expr: rate(agent_errors_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+          component: claude_agent
+        annotations:
+          summary: "High error rate detected in Claude agents"
+          description: "Error rate is {{ $value }} errors/sec (threshold: 0.1/sec)"
+          runbook_url: "https://docs.vistara.dev/runbooks/high-agent-errors"
+
+      # High latency alert
+      - alert: HighAgentLatency
+        expr: histogram_quantile(0.95, rate(agent_request_duration_seconds_bucket[5m])) > 30
+        for: 5m
+        labels:
+          severity: warning
+          component: claude_agent
+        annotations:
+          summary: "High latency detected in Claude agents"
+          description: "p95 latency is {{ $value }}s (threshold: 30s)"
+          runbook_url: "https://docs.vistara.dev/runbooks/high-latency"
+
+      # Agent spawn failures
+      - alert: AgentSpawnFailures
+        expr: rate(hypercore_agent_spawn_total{status="spawn_error"}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          component: hypercore
+        annotations:
+          summary: "Agent spawn failures detected"
+          description: "Spawn failure rate: {{ $value }}/sec (threshold: 0.05/sec)"
+          runbook_url: "https://docs.vistara.dev/runbooks/spawn-failures"
+
+      # Too many active sessions (capacity warning)
+      - alert: HighAgentSessionCount
+        expr: agent_active_sessions > 5000
+        for: 5m
+        labels:
+          severity: warning
+          component: claude_agent
+        annotations:
+          summary: "High number of active agent sessions"
+          description: "Active sessions: {{ $value }} (capacity: 10000)"
+          runbook_url: "https://docs.vistara.dev/runbooks/scale-agents"
+
+      # Critical capacity alert
+      - alert: CriticalAgentCapacity
+        expr: agent_active_sessions > 9000
+        for: 1m
+        labels:
+          severity: critical
+          component: claude_agent
+        annotations:
+          summary: "CRITICAL: Near maximum agent capacity"
+          description: "Active sessions: {{ $value }}/10000 (90% capacity)"
+          runbook_url: "https://docs.vistara.dev/runbooks/emergency-scaling"
+
+      # Low success rate
+      - alert: LowAgentSuccessRate
+        expr: (rate(agent_requests_total{status="success"}[5m]) / rate(agent_requests_total[5m])) < 0.95
+        for: 5m
+        labels:
+          severity: warning
+          component: claude_agent
+        annotations:
+          summary: "Low success rate for agent requests"
+          description: "Success rate: {{ $value | humanizePercentage }} (threshold: 95%)"
+          runbook_url: "https://docs.vistara.dev/runbooks/low-success-rate"
+
+      # Token usage spike (cost monitoring)
+      - alert: HighTokenUsageRate
+        expr: rate(agent_token_usage_total[5m]) > 10000
+        for: 10m
+        labels:
+          severity: info
+          component: claude_agent
+        annotations:
+          summary: "High token usage rate detected"
+          description: "Token usage: {{ $value }}/sec (threshold: 10k/sec) - Monitor costs"
+          runbook_url: "https://docs.vistara.dev/runbooks/token-costs"
+
+      # Agent container down
+      - alert: AgentContainerDown
+        expr: up{job="claude-agent"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: claude_agent
+        annotations:
+          summary: "Agent container is down"
+          description: "Agent {{ $labels.instance }} is not responding"
+          runbook_url: "https://docs.vistara.dev/runbooks/container-down"
+
+      # Memory pressure
+      - alert: AgentHighMemoryUsage
+        expr: container_memory_usage_bytes{container="claude-agent"} / container_spec_memory_limit_bytes{container="claude-agent"} > 0.90
+        for: 5m
+        labels:
+          severity: warning
+          component: claude_agent
+        annotations:
+          summary: "Agent container high memory usage"
+          description: "Memory usage: {{ $value | humanizePercentage }} (threshold: 90%)"
+          runbook_url: "https://docs.vistara.dev/runbooks/memory-pressure"
+
+      # Hypercore integration health
+      - alert: HypercoreIntegrationUnhealthy
+        expr: up{job="hypercore-agent-manager"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: hypercore
+        annotations:
+          summary: "Hypercore agent manager is down"
+          description: "Cannot spawn new agents - manager unavailable"
+          runbook_url: "https://docs.vistara.dev/runbooks/manager-down"
+
+  - name: claude_agent_recording_rules
+    interval: 30s
+    rules:
+      # Recording rule for request rate
+      - record: agent:requests:rate5m
+        expr: rate(agent_requests_total[5m])
+
+      # Recording rule for error rate
+      - record: agent:errors:rate5m
+        expr: rate(agent_errors_total[5m])
+
+      # Recording rule for success rate
+      - record: agent:success:ratio5m
+        expr: rate(agent_requests_total{status="success"}[5m]) / rate(agent_requests_total[5m])
+
+      # Recording rule for p95 latency
+      - record: agent:latency:p95_5m
+        expr: histogram_quantile(0.95, rate(agent_request_duration_seconds_bucket[5m]))
+
+      # Recording rule for p99 latency
+      - record: agent:latency:p99_5m
+        expr: histogram_quantile(0.99, rate(agent_request_duration_seconds_bucket[5m]))
+
+      # Recording rule for token usage rate
+      - record: agent:tokens:rate5m
+        expr: rate(agent_token_usage_total[5m])
+
+      # Recording rule for estimated hourly cost (assuming $3/M input, $15/M output tokens)
+      - record: agent:cost:estimated_hourly_usd
+        expr: (rate(agent_token_usage_total{type="input"}[1h]) * 3 / 1000000 + rate(agent_token_usage_total{type="output"}[1h]) * 15 / 1000000) * 3600
