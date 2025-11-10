@@ -466,6 +466,10 @@ func (a *Agent) Handler() {
 				}
 
 				partialWorkloads.Workloads = append(partialWorkloads.Workloads, workloads.GetWorkloads()...)
+				// Preserve beacon metadata from the finish message (should be same as begin)
+				if workloads.GetBeacon() != nil {
+					partialWorkloads.Beacon = workloads.GetBeacon()
+				}
 			case "begin":
 				a.tmpStateUpdates[id] = &workloads
 
@@ -479,6 +483,10 @@ func (a *Agent) Handler() {
 				}
 
 				partialWorkloads.Workloads = append(partialWorkloads.Workloads, workloads.GetWorkloads()...)
+				// Preserve beacon metadata from begin message (only set if not already set)
+				if partialWorkloads.GetBeacon() == nil && workloads.GetBeacon() != nil {
+					partialWorkloads.Beacon = workloads.GetBeacon()
+				}
 
 				continue
 			}
@@ -554,6 +562,10 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error
 	stateMap := make(map[string]*pb.NodeStateResponse)
 	for nodeName, savedUpdate := range a.lastStateUpdate {
 		stateMap[nodeName] = savedUpdate.update
+	}
+	// Include self state if available (for single-node clusters)
+	if a.lastStateSelf != nil {
+		stateMap[a.serf.LocalMember().Name] = a.lastStateSelf
 	}
 	a.lastStateMu.Unlock()
 
@@ -932,6 +944,7 @@ func (a *Agent) monitorWorkloads() {
 			partResp := pb.NodeStateResponse{
 				Node:      resp.GetNode(),
 				Workloads: resp.GetWorkloads()[(part * 10):min((part+1)*10, len(resp.GetWorkloads()))],
+				Beacon:    resp.GetBeacon(), // Include beacon metadata in all parts
 			}
 
 			if parts == 1 {
