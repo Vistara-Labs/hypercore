@@ -23,6 +23,9 @@ const (
 	clusterTLSKeyFlag        = "cluster-tls-key"
 	clusterPolicyFileFlag    = "cluster-policy"
 	respawnOnNodeFailureFlag = "respawn-on-node-failure"
+	beaconEndpointFlag       = "beacon-endpoint"
+	beaconPriceFlag          = "beacon-price"
+	beaconReputationFlag     = "beacon-reputation"
 	cpuFlag                  = "cpu"
 	memoryFlag               = "mem"
 	imageRefFlag             = "image-ref"
@@ -63,6 +66,9 @@ func AddClusterFlags(cmd *cobra.Command, cfg *Config) {
 	cmd.Flags().StringVar(&cfg.ClusterTLSKey, clusterTLSKeyFlag, "", "Cluster tls key path")
 	cmd.Flags().StringVar(&cfg.ClusterPolicyFile, clusterPolicyFileFlag, "", "Path to IBRL policy file (JSON)")
 	cmd.Flags().BoolVar(&cfg.RespawnOnNodeFailure, respawnOnNodeFailureFlag, false, "Whether this node monitors other cluster nodes and re-schedules their tasks on failure")
+	cmd.Flags().StringVar(&cfg.BeaconEndpoint, beaconEndpointFlag, "", "IBRL beacon network endpoint (HTTP/HTTPS URL or TCP address)")
+	cmd.Flags().Float64Var(&cfg.BeaconPrice, beaconPriceFlag, 0.01, "Price per GB for this node (used in policy evaluation)")
+	cmd.Flags().StringVar(&cfg.BeaconReputation, beaconReputationFlag, "1.0", "Reputation score for this node (0.0-1.0, used in policy evaluation)")
 }
 
 func AddClusterSpawnFlags(cmd *cobra.Command, cfg *Config) {

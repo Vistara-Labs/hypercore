@@ -70,6 +70,10 @@ type Agent struct {
 	beaconRegistry  *beacon.Registry
 	policyEngine    *policy.Engine
 
+	// Latency tracking for jitter calculation
+	latencyHistory  []float64
+	latencyHistoryMu sync.Mutex
+
 	// Prometheus metrics
 	serfQueueDepth   prometheus.Gauge
 	workloadCount    prometheus.Gauge
@@ -97,7 +101,7 @@ func (a *Agent) hashWorkloadState(state *pb.NodeStateResponse) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
-func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *vcontainerd.Repo, tlsConfig *TLSConfig, policyFilePath string) (*Agent, error) {
+func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *vcontainerd.Repo, tlsConfig *TLSConfig, policyFilePath string, beaconEndpoint string, beaconPrice float64, beaconReputation string) (*Agent, error) {
 	eventCh := make(chan serf.Event, 64)
 
 	serviceProxy, err := NewServiceProxy(logger, tlsConfig)
@@ -162,10 +166,18 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *
 	// Register metrics
 	prometheus.MustRegister(serfQueueDepth, workloadCount, broadcastSkipped, stateChanges, ibrlBeaconConnected)
 
-	// Initialize IBRL beacon client (with empty endpoint for standalone mode)
-	beaconClient, err := beacon.NewClient(logger, "")
+	// Initialize IBRL beacon client
+	beaconClient, err := beacon.NewClient(logger, beaconEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize beacon client: %w", err)
+	}
+
+	// Set price and reputation if provided
+	if beaconPrice > 0 {
+		beaconClient.SetPrice(beaconPrice)
+	}
+	if beaconReputation != "" {
+		beaconClient.SetReputationScore(beaconReputation)
 	}
 
 	// Initialize beacon registry
@@ -199,6 +211,7 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *
 		beaconRegistry:   beaconRegistry,
 		policyEngine:     policyEngine,
 		ibrlBeaconConnected: ibrlBeaconConnected,
+		latencyHistory:    make([]float64, 0, 10), // Keep last 10 measurements
 	}
 
 	// Update beacon connection metric
@@ -814,13 +827,43 @@ func (a *Agent) monitorWorkloads() {
 			},
 		}
 
-		// Add beacon metadata
+		// Update metrics from Serf stats before getting beacon metadata
 		if a.beaconClient != nil {
+			// Get queue depth from Serf stats
+			stats := a.serf.Stats()
+			var queueDepth uint32
+			if queueDepthStr, ok := stats["event_queue_depth"]; ok {
+				if qd, err := strconv.Atoi(queueDepthStr); err == nil {
+					queueDepth = uint32(qd)
+					a.logger.WithField("queue_depth", queueDepth).Debug("read queue depth from Serf stats")
+				} else {
+					a.logger.WithError(err).WithField("queue_depth_str", queueDepthStr).Debug("failed to parse queue depth")
+				}
+			} else {
+				a.logger.Debug("queue_depth not found in Serf stats")
+			}
+
+			// Measure average latency to other cluster members
+			latencyMs := a.measureClusterLatency()
+			if latencyMs > 0 {
+				a.logger.WithField("latency_ms", latencyMs).Debug("measured cluster latency")
+			} else {
+				a.logger.Debug("latency measurement returned 0 (no other members or measurement failed)")
+			}
+
+			// Calculate jitter (variance in latency measurements)
+			jitterMs := a.calculateJitter()
+
+			// Update beacon metrics with real measurements
+			a.beaconClient.UpdateMetrics(latencyMs, jitterMs, 0.0, queueDepth)
+
 			beaconMetadata := a.beaconClient.GetBeaconMetadata()
 			resp.Beacon = beaconMetadata
 			a.logger.WithFields(log.Fields{
 				"beacon_node_id": beaconMetadata.BeaconNodeId,
 				"latency_ms":     beaconMetadata.LatencyMs,
+				"jitter_ms":      beaconMetadata.JitterMs,
+				"queue_depth":    beaconMetadata.QueueDepth,
 				"price_per_gb":   beaconMetadata.PricePerGb,
 			}).Debug("added beacon metadata to state response")
 		}
@@ -1025,6 +1068,96 @@ func (a *Agent) findMember(name string) *serf.Member {
 	}
 
 	return nil
+}
+
+// measureClusterLatency measures average latency to other cluster members
+// Uses Serf's member RTT if available, otherwise falls back to TCP connection test
+func (a *Agent) measureClusterLatency() float64 {
+	members := a.serf.Members()
+	if len(members) <= 1 {
+		return 0.0 // No other members to measure
+	}
+
+	var totalLatency time.Duration
+	var measuredCount int
+
+	for _, member := range members {
+		if member.Status != serf.StatusAlive || member.Name == a.serf.LocalMember().Name {
+			continue
+		}
+
+		// Try to use Serf's internal RTT measurement if available
+		// Serf tracks RTT for each member in its memberlist
+		// For now, measure latency by attempting TCP connection to gRPC port
+		// (more reliable than UDP port 7946)
+		start := time.Now()
+		// Try gRPC port (8000) instead of Serf port (7946 UDP)
+		addr := fmt.Sprintf("%s:8000", member.Addr.String())
+		conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
+		if err == nil {
+			latency := time.Since(start)
+			totalLatency += latency
+			measuredCount++
+			conn.Close()
+			a.logger.WithFields(log.Fields{
+				"member":      member.Name,
+				"addr":        addr,
+				"latency_ms":  float64(latency.Nanoseconds()) / 1e6,
+			}).Debug("measured latency to cluster member")
+		} else {
+			a.logger.WithFields(log.Fields{
+				"member": member.Name,
+				"addr":   addr,
+				"error":  err,
+			}).Debug("failed to measure latency to cluster member")
+		}
+	}
+
+	if measuredCount == 0 {
+		return 0.0
+	}
+
+	avgLatency := totalLatency / time.Duration(measuredCount)
+	latencyMs := float64(avgLatency.Nanoseconds()) / 1e6 // Convert to milliseconds
+
+	// Store in history for jitter calculation
+	a.latencyHistoryMu.Lock()
+	a.latencyHistory = append(a.latencyHistory, latencyMs)
+	if len(a.latencyHistory) > 10 {
+		a.latencyHistory = a.latencyHistory[1:] // Keep last 10
+	}
+	a.latencyHistoryMu.Unlock()
+
+	return latencyMs
+}
+
+// calculateJitter calculates jitter (variance) from latency history
+func (a *Agent) calculateJitter() float64 {
+	a.latencyHistoryMu.Lock()
+	defer a.latencyHistoryMu.Unlock()
+
+	if len(a.latencyHistory) < 2 {
+		return 0.0 // Need at least 2 measurements for variance
+	}
+
+	// Calculate mean
+	var sum float64
+	for _, l := range a.latencyHistory {
+		sum += l
+	}
+	mean := sum / float64(len(a.latencyHistory))
+
+	// Calculate variance (jitter)
+	var variance float64
+	for _, l := range a.latencyHistory {
+		diff := l - mean
+		variance += diff * diff
+	}
+	variance /= float64(len(a.latencyHistory))
+
+	// Jitter is standard deviation (square root of variance)
+	jitter := math.Sqrt(variance)
+	return jitter
 }
 
 func (a *Agent) Join(addr string) error {

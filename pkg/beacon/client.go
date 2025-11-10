@@ -6,6 +6,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -100,13 +103,38 @@ func (c *Client) Connect(ctx context.Context) error {
 		return fmt.Errorf("no beacon endpoint configured")
 	}
 
-	// TODO: Implement actual beacon network connection
-	// For now, simulate successful connection
 	c.logger.WithField("endpoint", c.endpoint).Info("connecting to beacon network")
+
+	// Attempt HTTP health check first
+	if strings.HasPrefix(c.endpoint, "http://") || strings.HasPrefix(c.endpoint, "https://") {
+		client := &http.Client{
+			Timeout: 5 * time.Second,
+		}
+		resp, err := client.Get(c.endpoint + "/health")
+		if err != nil {
+			c.logger.WithError(err).Warn("beacon endpoint health check failed, operating in standalone mode")
+			return err
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			c.logger.WithField("status", resp.StatusCode).Warn("beacon endpoint returned non-OK status, operating in standalone mode")
+			return fmt.Errorf("beacon endpoint returned status %d", resp.StatusCode)
+		}
+		c.connected = true
+		c.logger.Info("successfully connected to beacon network via HTTP")
+		return nil
+	}
+
+	// Attempt TCP connection for other protocols
+	conn, err := net.DialTimeout("tcp", c.endpoint, 5*time.Second)
+	if err != nil {
+		c.logger.WithError(err).Warn("beacon endpoint connection failed, operating in standalone mode")
+		return err
+	}
+	conn.Close()
 
 	c.connected = true
 	c.logger.Info("successfully connected to beacon network")
-
 	return nil
 }
 

@@ -13,6 +13,9 @@ type Config struct {
 	ClusterPolicyFile    string
 	GrpcBindAddr         string
 	HTTPBindAddr         string
+	BeaconEndpoint       string
+	BeaconPrice          float64
+	BeaconReputation     string
 	ClusterSpawn         struct {
 		CPU        int
 		Memory     int

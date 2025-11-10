@@ -310,7 +310,10 @@ func ClusterCommand(cfg *Config) *cobra.Command {
 
 			repo, err := containerd.NewMicroVMRepository(containerdConfig(cfg))
 			if err != nil {
-				return err
+				// On Mac, containerd is not available - only allow metrics/list commands
+				logger.WithError(err).Warn("containerd not available - cluster node mode disabled")
+				logger.Info("Use 'hypercore cluster metrics' or 'hypercore cluster list' to query existing clusters")
+				return fmt.Errorf("containerd operations not supported on Mac: %w", err)
 			}
 
 			var tlsConfig *cluster.TLSConfig
@@ -322,7 +325,7 @@ func ClusterCommand(cfg *Config) *cobra.Command {
 				}
 			}
 
-			agent, err := cluster.NewAgent(logger, cfg.ClusterBaseURL, cfg.ClusterBindAddr, cfg.RespawnOnNodeFailure, repo, tlsConfig, cfg.ClusterPolicyFile)
+			agent, err := cluster.NewAgent(logger, cfg.ClusterBaseURL, cfg.ClusterBindAddr, cfg.RespawnOnNodeFailure, repo, tlsConfig, cfg.ClusterPolicyFile, cfg.BeaconEndpoint, cfg.BeaconPrice, cfg.BeaconReputation)
 			if err != nil {
 				return err
 			}
