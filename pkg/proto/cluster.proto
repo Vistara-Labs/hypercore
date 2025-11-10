@@ -17,11 +17,63 @@ enum ClusterEvent {
     ERROR = 0;
     SPAWN = 1;
     STOP = 2;
+    BEACON_ATTEST = 3;
+    POLICY_QUERY = 4;
+    PROOF_VERIFY = 5;
 }
 
 message ClusterMessage {
     ClusterEvent event = 1;
     google.protobuf.Any wrappedMessage = 2;
+}
+
+// IBRL: Beacon module messages
+message BeaconMetadata {
+    string beacon_node_id = 1;
+    bytes node_signature = 2;
+    int64 timestamp = 3;
+    string reputation_score = 4;
+    repeated string node_capabilities = 5;
+    double latency_ms = 6;
+    double jitter_ms = 7;
+    double packet_loss = 8;
+    uint32 queue_depth = 9;
+    double price_per_gb = 10;
+}
+
+message BeaconAttestation {
+    string node_id = 1;
+    string attestation_type = 2;
+    bytes attestation_data = 3;
+}
+
+// IBRL: Policy module messages
+message PolicyContext {
+    string policy_id = 1;
+    repeated string tags = 2;
+    string enforcement_level = 3;
+}
+
+message PolicyQuery {
+    string workload_id = 1;
+    string policy_type = 2;
+    map<string, string> context = 3;
+}
+
+// IBRL: Proof module messages
+message WorkloadProof {
+    string proof_hash = 1;
+    bytes proof_signature = 2;
+    map<string, string> metrics = 3;
+    int64 proof_timestamp = 4;
+    string hypervisor_type = 5;
+}
+
+message ProofVerification {
+    string workload_id = 1;
+    string proof_hash = 2;
+    string verification_result = 3;
+    string beacon_registry_hash = 4;
 }
 
 message ErrorResponse {
@@ -50,11 +102,15 @@ message VmStopRequest {
 message WorkloadState {
     string id = 1;
     VmSpawnRequest source_request = 2;
+    WorkloadProof proof = 3;
 }
 
 message NodeStateResponse {
     Node node = 1;
     repeated WorkloadState workloads = 2;
+    BeaconMetadata beacon = 3;
+    PolicyContext policy = 4;
+    string state_signature = 5;
 }
 
 message NodesStateResponse {

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"vistara-node/pkg/beacon"
 	vcontainerd "vistara-node/pkg/containerd"
 	pb "vistara-node/pkg/proto/cluster"
 
@@ -63,11 +64,18 @@ type Agent struct {
 	lastStateHash   string // Track state hash to detect changes
 	stateMu         sync.Mutex
 
+	// IBRL components
+	beaconClient    *beacon.Client
+	beaconRegistry  *beacon.Registry
+
 	// Prometheus metrics
 	serfQueueDepth   prometheus.Gauge
 	workloadCount    prometheus.Gauge
 	broadcastSkipped prometheus.Counter
 	stateChanges     prometheus.Counter
+
+	// IBRL metrics
+	ibrlBeaconConnected prometheus.Gauge
 }
 
 // hashWorkloadState creates a consistent hash of the workload state
@@ -144,8 +152,22 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *
 		Help: "Total number of state changes detected",
 	})
 
+	ibrlBeaconConnected := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "hypercore_ibrl_beacon_connected",
+		Help: "IBRL beacon connection status (1=connected, 0=disconnected)",
+	})
+
 	// Register metrics
-	prometheus.MustRegister(serfQueueDepth, workloadCount, broadcastSkipped, stateChanges)
+	prometheus.MustRegister(serfQueueDepth, workloadCount, broadcastSkipped, stateChanges, ibrlBeaconConnected)
+
+	// Initialize IBRL beacon client (with empty endpoint for standalone mode)
+	beaconClient, err := beacon.NewClient(logger, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize beacon client: %w", err)
+	}
+
+	// Initialize beacon registry
+	beaconRegistry := beacon.NewRegistry(logger)
 
 	agent := &Agent{
 		eventCh:          eventCh,
@@ -161,6 +183,16 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *
 		workloadCount:    workloadCount,
 		broadcastSkipped: broadcastSkipped,
 		stateChanges:     stateChanges,
+		beaconClient:     beaconClient,
+		beaconRegistry:   beaconRegistry,
+		ibrlBeaconConnected: ibrlBeaconConnected,
+	}
+
+	// Update beacon connection metric
+	if beaconClient.IsConnected() {
+		agent.ibrlBeaconConnected.Set(1)
+	} else {
+		agent.ibrlBeaconConnected.Set(0)
 	}
 
 	// Start monitoring workloads and state updates
@@ -673,6 +705,17 @@ func (a *Agent) monitorWorkloads() {
 			Node: &pb.Node{
 				Id: a.serf.LocalMember().Name,
 			},
+		}
+
+		// Add beacon metadata
+		if a.beaconClient != nil {
+			beaconMetadata := a.beaconClient.GetBeaconMetadata()
+			resp.Beacon = beaconMetadata
+			a.logger.WithFields(log.Fields{
+				"beacon_node_id": beaconMetadata.BeaconNodeId,
+				"latency_ms":     beaconMetadata.LatencyMs,
+				"price_per_gb":   beaconMetadata.PricePerGb,
+			}).Debug("added beacon metadata to state response")
 		}
 
 		for _, task := range tasks {
