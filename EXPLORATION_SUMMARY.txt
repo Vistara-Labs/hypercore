@@ -1,0 +1,280 @@
+================================================================================
+HYPERCORE CODEBASE EXPLORATION - SUMMARY REPORT
+================================================================================
+
+EXPLORATION LEVEL: Medium Thoroughness
+Focus: Architecture understanding for IBRL integration planning
+
+================================================================================
+KEY FINDINGS
+================================================================================
+
+1. CLUSTER MODULE ORGANIZATION
+   Location: /home/user/hypercore/pkg/cluster/
+   Core Files:
+   - serf.go (883 lines) - Agent implementation with Serf gossip
+   - service.go (98 lines) - gRPC and HTTP servers
+   - proxy.go (120 lines) - HTTP reverse proxy for routing
+   - utils.go (30 lines) - Helper functions
+   
+   Total: ~1,131 lines of cluster orchestration code
+
+2. CLI COMMANDS (5 main commands)
+   Location: /home/user/hypercore/internal/hypercore/commands.go
+   
+   Entry Points:
+   - hypercore cluster [join-addr]     - Start cluster node
+   - hypercore cluster spawn           - Deploy workload (gRPC)
+   - hypercore cluster stop            - Stop workload (gRPC)
+   - hypercore cluster list            - List all workloads (gRPC)
+   - hypercore cluster logs            - Get workload logs (gRPC)
+
+   Plus single-node commands:
+   - hypercore spawn                   - Local VM spawn
+   - hypercore stop                    - Local VM stop
+   - hypercore list                    - List local VMs
+   - hypercore attach                  - Attach to VM console
+
+3. SERF GOSSIP MESSAGE STRUCTURE
+   Protocol: Protobuf-based (pkg/proto/cluster.proto)
+   
+   Events:
+   - SPAWN (1): Workload creation queries/responses
+   - STOP (2): Workload deletion queries/responses
+   - ERROR (0): Error responses
+   
+   Uses two message types:
+   a) Serf Query RPC: For spawn/stop (request-response, timeout=90s)
+   b) Serf UserEvent: For state broadcasts (gossip, 5-second interval)
+   
+   Batching: Large states split into 10-workload chunks with markers
+   (begin, part, finish, complete) for reassembly
+
+4. WORKLOAD SCHEDULING
+   Algorithm: First-fit bin packing with dry-run optimization
+   
+   Process:
+   1. Send dry-run query to ALL nodes
+   2. First node to respond with spare capacity selected
+   3. Send actual spawn query to ONLY that node
+   4. Return container ID + URL
+   
+   Constraints Checked:
+   - vCPU: sum(used) + requested <= max(runtime.NumCPU(), 225)
+   - Memory: sum(used) + requested <= MemAvailable
+   
+   Limitations:
+   - No resource reservations
+   - No affinity/anti-affinity policies
+   - No priority queuing
+   - No intelligent node selection beyond capacity
+
+5. REVERSE PROXY & ROUTING
+   Location: /home/user/hypercore/pkg/cluster/proxy.go
+   
+   Architecture:
+   https://containerID.domain.com:443
+        ↓ (Host header extraction)
+   Service Registry lookup
+        ↓ (Dynamic port registration)
+   192.168.127.X:port (Container IP)
+   
+   Features:
+   - HTTP handler extracts container ID from Host header
+   - Maps to backend container address
+   - Creates reverse proxy on-the-fly
+   - Supports TLS per port
+   - Dynamic listener creation
+   - Service registration via monitorWorkloads()
+
+6. SERF CONFIGURATION
+   Conservative settings to avoid queue buildup:
+   - GossipInterval: 2 seconds
+   - ProbeInterval: 5 seconds
+   - SuspicionMult: 6 (high tolerance)
+   - GossipNodes: 2 (conservative)
+   - UserEventSizeLimit: 2048 bytes
+   - MaxQueueDepth: 5000 events
+   - WorkloadBroadcastPeriod: 5 seconds
+
+7. CONTAINERD INTEGRATION
+   Location: /home/user/hypercore/pkg/containerd/repo.go
+   
+   Key Operations:
+   - Pull image from registry
+   - Create isolated network namespace
+   - Apply resource limits (CPU, Memory)
+   - Configure CNI networks (ptp, firewall, tc-redirect-tap)
+   - Create and start container task
+   - Track container lifecycle
+   
+   Network Config:
+   - Subnet: 192.168.127.0/24
+   - IPAM: host-local
+   - Plugins: ptp, firewall, tc-redirect-tap (for VM support)
+
+8. MONITORING & METRICS
+   Location: /home/user/hypercore/pkg/cluster/serf.go
+   
+   Prometheus Metrics:
+   - hypercore_serf_queue_depth (gauge)
+   - hypercore_workload_count (gauge)
+   - hypercore_broadcast_skipped_total (counter)
+   - hypercore_state_changes_total (counter)
+   
+   Monitoring Goroutines:
+   - monitorWorkloads() - Runs every 5s, collects state, broadcasts if changed
+   - monitorStateUpdates() - Runs every 5s, detects node failures (15s timeout)
+   - Handler() - Event processing loop for Serf events
+
+9. SERVICE PORTS
+   - 7946 (UDP/TCP): Serf gossip
+   - 8000 (gRPC): spawn/stop/list/logs
+   - 8001 (HTTP): logs endpoint + reverse proxy
+   - Dynamic: Per-workload port mappings (443:8080, etc.)
+
+10. CONFIGURATION MANAGEMENT
+    Location: /home/user/hypercore/internal/hypercore/config.go
+    
+    Key Fields:
+    - CtrSocketPath: Containerd socket path
+    - CtrNamespace: Containerd namespace (default: "vistara")
+    - ClusterBindAddr: Serf bind address
+    - ClusterBaseURL: Domain for exposing workloads
+    - GrpcBindAddr: gRPC server binding
+    - HTTPBindAddr: HTTP server binding
+    - RespawnOnNodeFailure: Auto-reschedule flag
+
+================================================================================
+RECOMMENDED IBRL INTEGRATION POINTS
+================================================================================
+
+THREE NEW PACKAGES TO CREATE:
+1. pkg/beacon/          - Node discovery & attestation
+2. pkg/policy/          - Scheduling policy enforcement
+3. pkg/proof/           - Computation proof generation & verification
+
+KEY INTEGRATION LOCATIONS:
+1. Proto Extensions - Add beacon, policy, proof messages
+2. Agent.NewAgent() - Initialize IBRL components
+3. Agent.SpawnRequest() - Wrap with policy checks + scheduling
+4. Agent.handleSpawnRequest() - Start proof collection
+5. Agent.monitorWorkloads() - Add beacon attestation + proof signing
+6. Agent.Handler() - Add handlers for new IBRL event types
+
+SUGGESTED INTEGRATION ORDER:
+Phase 1 (Week 1-2): Beacon - node attestation
+Phase 2 (Week 3-4): Policy - scheduling enforcement
+Phase 3 (Week 5-6): Proof - execution proof generation
+Phase 4 (Week 7-8): Integration testing & refinement
+
+================================================================================
+GENERATED DOCUMENTATION
+================================================================================
+
+Three comprehensive guides have been created and saved to:
+
+1. ARCHITECTURE_ANALYSIS.md (21 KB)
+   - Complete 15-section analysis
+   - Data structures and flows
+   - Message format specifications
+   - Existing code patterns
+   - Security considerations
+   - Performance characteristics
+   - IBRL integration recommendations with code examples
+
+2. QUICK_REFERENCE.md (11 KB)
+   - File locations table
+   - Key ports and services
+   - Message flow diagrams
+   - Code entry points
+   - Data structure definitions
+   - Configuration defaults
+   - Constants and defaults
+   - IBRL integration summary
+
+3. IBRL_INTEGRATION_GUIDE.md (18 KB)
+   - Proto message definitions for IBRL
+   - Package structure for new modules
+   - Detailed integration points with code snippets
+   - Testing strategy (unit + integration)
+   - Configuration examples
+   - Deployment checklist
+   - Rollback strategy
+   - Monitoring metrics
+   - Known issues and mitigations
+   - Phased rollout plan (4 phases, 8 weeks)
+
+All files: /home/user/hypercore/{ARCHITECTURE_ANALYSIS,QUICK_REFERENCE,IBRL_INTEGRATION_GUIDE}.md
+
+================================================================================
+ARCHITECTURE SUMMARY
+================================================================================
+
+CLUSTER WORKFLOW:
+1. User runs: hypercore cluster spawn --cpu 2 --mem 512 --image X --ports 443:8080
+2. CLI makes gRPC call to local Agent on port 8000
+3. Agent sends Serf dry-run query to all nodes (Query RPC)
+4. First responsive node selected
+5. Agent sends actual spawn query to selected node
+6. Node creates container via Containerd
+7. Container gets IP in 192.168.127.0/24 subnet
+8. monitorWorkloads() detects new container after 5 seconds
+9. Port mapping (443:8080) extracted from spawn request labels
+10. ServiceProxy.Register() adds mapping: containerID:443 -> IP:8080
+11. Serf UserEvent broadcasts NodeStateResponse to all nodes
+12. User accesses: https://containerID.domain:443 -> container:8080
+
+STATE SYNCHRONIZATION:
+- Every 5 seconds, monitorWorkloads() collects container list
+- SHA256 hash created from workload IDs
+- If hash changed, broadcast via Serf UserEvent (gossip)
+- All nodes receive event, update local lastStateUpdate map
+- Port mappings registered with ServiceProxy
+- Node failure detected if no update for 15 seconds
+
+RESOURCE CONSTRAINTS:
+- CPU: max(NumCPU, 225) vCPUs per node
+- Memory: MemAvailable from /proc/meminfo
+- Queue: Max 5000 Serf events in queue
+- Skips broadcast if queue > 10,000 (prevents overload)
+
+================================================================================
+WHAT'S READY FOR IBRL
+================================================================================
+
+EXISTING PATTERNS TO LEVERAGE:
+1. Goroutine-based monitoring loops (5-second intervals)
+2. Serf event handling infrastructure
+3. Protobuf message definitions and marshaling
+4. Prometheus metrics registration
+5. Node member tracking via Serf
+6. Distributed state sharing via gossip
+
+GAPS TO FILL WITH IBRL:
+1. Node authentication (Beacon)
+2. Intelligent scheduling (Policy)
+3. Workload verification (Proof)
+4. State attestation (Beacon + Proof)
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. READ: ARCHITECTURE_ANALYSIS.md - Understand full architecture
+2. READ: IBRL_INTEGRATION_GUIDE.md - Get implementation details
+3. REFERENCE: QUICK_REFERENCE.md - During implementation
+4. CODE LOCATION: All files in /home/user/hypercore/pkg/cluster/
+
+Key Files to Modify:
+- /home/user/hypercore/pkg/cluster/serf.go (Agent implementation)
+- /home/user/hypercore/pkg/proto/cluster.proto (Message definitions)
+- /home/user/hypercore/internal/hypercore/flags.go (CLI flags)
+- /home/user/hypercore/internal/hypercore/config.go (Config struct)
+
+Files to Create:
+- /home/user/hypercore/pkg/beacon/*.go
+- /home/user/hypercore/pkg/policy/*.go
+- /home/user/hypercore/pkg/proof/*.go
+
+================================================================================
