@@ -322,7 +322,7 @@ func ClusterCommand(cfg *Config) *cobra.Command {
 				}
 			}
 
-			agent, err := cluster.NewAgent(logger, cfg.ClusterBaseURL, cfg.ClusterBindAddr, cfg.RespawnOnNodeFailure, repo, tlsConfig)
+			agent, err := cluster.NewAgent(logger, cfg.ClusterBaseURL, cfg.ClusterBindAddr, cfg.RespawnOnNodeFailure, repo, tlsConfig, cfg.ClusterPolicyFile)
 			if err != nil {
 				return err
 			}

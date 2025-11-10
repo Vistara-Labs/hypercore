@@ -1,0 +1,12 @@
+{
+  "name": "permissive",
+  "description": "Permissive policy - accepts any available node",
+  "mode": "permissive",
+  "rules": {},
+  "scoring": {
+    "latency_weight": 0.25,
+    "price_weight": 0.25,
+    "reputation_weight": 0.25,
+    "queue_weight": 0.25
+  }
+}

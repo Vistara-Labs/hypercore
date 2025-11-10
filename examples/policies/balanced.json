@@ -1,0 +1,19 @@
+{
+  "name": "balanced",
+  "description": "Balanced policy for general-purpose workloads",
+  "mode": "enforce",
+  "rules": {
+    "max_latency_ms": 200,
+    "max_price_per_gb": 0.02,
+    "min_reputation_score": 0.7,
+    "max_queue_depth": 100,
+    "max_packet_loss": 2.0,
+    "max_jitter_ms": 30
+  },
+  "scoring": {
+    "latency_weight": 0.25,
+    "price_weight": 0.25,
+    "reputation_weight": 0.25,
+    "queue_weight": 0.25
+  }
+}

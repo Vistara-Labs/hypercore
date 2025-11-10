@@ -19,6 +19,7 @@ import (
 	"time"
 	"vistara-node/pkg/beacon"
 	vcontainerd "vistara-node/pkg/containerd"
+	"vistara-node/pkg/policy"
 	pb "vistara-node/pkg/proto/cluster"
 
 	ctask "github.com/containerd/containerd/api/types/task"
@@ -67,6 +68,7 @@ type Agent struct {
 	// IBRL components
 	beaconClient    *beacon.Client
 	beaconRegistry  *beacon.Registry
+	policyEngine    *policy.Engine
 
 	// Prometheus metrics
 	serfQueueDepth   prometheus.Gauge
@@ -95,7 +97,7 @@ func (a *Agent) hashWorkloadState(state *pb.NodeStateResponse) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
-func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *vcontainerd.Repo, tlsConfig *TLSConfig) (*Agent, error) {
+func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *vcontainerd.Repo, tlsConfig *TLSConfig, policyFilePath string) (*Agent, error) {
 	eventCh := make(chan serf.Event, 64)
 
 	serviceProxy, err := NewServiceProxy(logger, tlsConfig)
@@ -169,6 +171,16 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *
 	// Initialize beacon registry
 	beaconRegistry := beacon.NewRegistry(logger)
 
+	// Initialize policy engine
+	policyEngine := policy.NewEngine(logger)
+
+	// Load policy file if specified
+	if policyFilePath != "" {
+		if err := policyEngine.LoadPolicy(policyFilePath); err != nil {
+			return nil, fmt.Errorf("failed to load policy file: %w", err)
+		}
+	}
+
 	agent := &Agent{
 		eventCh:          eventCh,
 		cfg:              cfg,
@@ -185,6 +197,7 @@ func NewAgent(logger *log.Logger, baseURL, bindAddr string, respawn bool, repo *
 		stateChanges:     stateChanges,
 		beaconClient:     beaconClient,
 		beaconRegistry:   beaconRegistry,
+		policyEngine:     policyEngine,
 		ibrlBeaconConnected: ibrlBeaconConnected,
 	}
 
@@ -531,6 +544,91 @@ func wrapClusterErrorMessage(errorMessage string) ([]byte, error) {
 
 // Request another node to spawn a VM
 func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error) {
+	// Check if policy allows this spawn
+	if allowed, reason := a.policyEngine.CanSpawn(req); !allowed {
+		return nil, fmt.Errorf("policy violation: %s", reason)
+	}
+
+	// Get current cluster state for policy evaluation
+	a.lastStateMu.Lock()
+	stateMap := make(map[string]*pb.NodeStateResponse)
+	for nodeName, savedUpdate := range a.lastStateUpdate {
+		stateMap[nodeName] = savedUpdate.update
+	}
+	a.lastStateMu.Unlock()
+
+	// Use policy engine to select best nodes in priority order
+	members := a.serf.Members()
+	selectedNodes, err := a.policyEngine.SelectNodes(req, members, stateMap)
+	if err != nil {
+		a.logger.WithError(err).Warn("policy-based node selection failed, falling back to broadcast")
+		// Fall back to original broadcast behavior
+		return a.spawnRequestBroadcast(req)
+	}
+
+	a.logger.WithFields(log.Fields{
+		"policy":        a.policyEngine.GetPolicy().Name,
+		"selected":      len(selectedNodes),
+		"top_node":      selectedNodes[0],
+	}).Info("policy-based node selection completed")
+
+	// Try nodes in priority order
+	req.DryRun = false
+	payload, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, req)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, nodeName := range selectedNodes {
+		a.logger.WithFields(log.Fields{
+			"node":     nodeName,
+			"priority": i + 1,
+			"total":    len(selectedNodes),
+		}).Info("attempting to spawn on policy-selected node")
+
+		params := a.serf.DefaultQueryParams()
+		params.Timeout = time.Second * 90
+		params.FilterNodes = []string{nodeName}
+
+		query, err := a.serf.Query(QueryName, payload, params)
+		if err != nil {
+			a.logger.WithError(err).WithField("node", nodeName).Warn("query failed, trying next node")
+			continue
+		}
+
+		for response := range query.ResponseCh() {
+			var resp pb.ClusterMessage
+			if err := proto.Unmarshal(response.Payload, &resp); err != nil {
+				a.logger.WithError(err).Error("failed to unmarshal response")
+				continue
+			}
+
+			if resp.GetEvent() == pb.ClusterEvent_ERROR {
+				var errorResp pb.ErrorResponse
+				if err := resp.GetWrappedMessage().UnmarshalTo(&errorResp); err != nil {
+					a.logger.WithError(err).Error("failed to unmarshal error response")
+					continue
+				}
+
+				a.logger.WithField("error", errorResp.GetError()).Warn("node returned error, trying next node")
+				continue
+			}
+
+			var wrappedResp pb.VmSpawnResponse
+			if err := resp.GetWrappedMessage().UnmarshalTo(&wrappedResp); err != nil {
+				return nil, err
+			}
+
+			a.logger.WithField("node", response.From).Info("successfully spawned VM on policy-selected node")
+			return &wrappedResp, nil
+		}
+	}
+
+	return nil, errors.New("no suitable node found after trying all policy-selected candidates")
+}
+
+// spawnRequestBroadcast is the original broadcast-based spawn (fallback)
+func (a *Agent) spawnRequestBroadcast(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error) {
 	req.DryRun = true
 	payload, err := wrapClusterMessage(pb.ClusterEvent_SPAWN, req)
 	if err != nil {
@@ -552,10 +650,7 @@ func (a *Agent) SpawnRequest(req *pb.VmSpawnRequest) (*pb.VmSpawnResponse, error
 		a.logger.Infof("Successful response from node: %s", response.From)
 
 		params := a.serf.DefaultQueryParams()
-		// Give 90 seconds to the node to pull the image from the network
-		// and spawn the VM
 		params.Timeout = time.Second * 90
-		// Only send the query to the node that sent the response
 		params.FilterNodes = []string{response.From}
 
 		query, err = a.serf.Query(QueryName, payload, params)

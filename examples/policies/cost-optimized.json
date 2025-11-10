@@ -1,0 +1,17 @@
+{
+  "name": "cost-optimized",
+  "description": "Minimize cost while maintaining acceptable quality",
+  "mode": "enforce",
+  "rules": {
+    "max_price_per_gb": 0.05,
+    "max_latency_ms": 500,
+    "min_reputation_score": 0.5,
+    "max_packet_loss": 5.0
+  },
+  "scoring": {
+    "latency_weight": 0.1,
+    "price_weight": 0.7,
+    "reputation_weight": 0.1,
+    "queue_weight": 0.1
+  }
+}

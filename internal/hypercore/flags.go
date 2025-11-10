@@ -21,12 +21,14 @@ const (
 	clusterBaseURLFlag       = "cluster-base-url"
 	clusterTLSCertFlag       = "cluster-tls-cert"
 	clusterTLSKeyFlag        = "cluster-tls-key"
+	clusterPolicyFileFlag    = "cluster-policy"
 	respawnOnNodeFailureFlag = "respawn-on-node-failure"
 	cpuFlag                  = "cpu"
 	memoryFlag               = "mem"
 	imageRefFlag             = "image-ref"
 	portsFlag                = "ports"
 	envFlag                  = "env"
+	policyFileFlag           = "policy"
 	idFlag                   = "id"
 )
 
@@ -59,6 +61,7 @@ func AddClusterFlags(cmd *cobra.Command, cfg *Config) {
 	cmd.Flags().StringVar(&cfg.ClusterBaseURL, clusterBaseURLFlag, "example.com", "Cluster base URL")
 	cmd.Flags().StringVar(&cfg.ClusterTLSCert, clusterTLSCertFlag, "", "Cluster tls cert path")
 	cmd.Flags().StringVar(&cfg.ClusterTLSKey, clusterTLSKeyFlag, "", "Cluster tls key path")
+	cmd.Flags().StringVar(&cfg.ClusterPolicyFile, clusterPolicyFileFlag, "", "Path to IBRL policy file (JSON)")
 	cmd.Flags().BoolVar(&cfg.RespawnOnNodeFailure, respawnOnNodeFailureFlag, false, "Whether this node monitors other cluster nodes and re-schedules their tasks on failure")
 }
 
@@ -69,6 +72,7 @@ func AddClusterSpawnFlags(cmd *cobra.Command, cfg *Config) {
 	cmd.Flags().StringVar(&cfg.ClusterSpawn.ImageRef, imageRefFlag, "", "Image Reference")
 	cmd.Flags().StringVar(&cfg.ClusterSpawn.Ports, portsFlag, "", "comma-separated list of ports to expose")
 	cmd.Flags().StringSliceVar(&cfg.ClusterSpawn.Env, envFlag, []string{}, "list of env variables to pass to container")
+	cmd.Flags().StringVar(&cfg.ClusterSpawn.PolicyFile, policyFileFlag, "", "Path to policy file for this spawn (overrides cluster default)")
 }
 
 func AddClusterStopFlags(cmd *cobra.Command, cfg *Config) {

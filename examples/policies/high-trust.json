@@ -1,0 +1,17 @@
+{
+  "name": "high-trust",
+  "description": "Only use highly trusted nodes with proven track record",
+  "mode": "enforce",
+  "rules": {
+    "min_reputation_score": 0.9,
+    "max_latency_ms": 300,
+    "max_price_per_gb": 0.1,
+    "max_packet_loss": 1.0
+  },
+  "scoring": {
+    "latency_weight": 0.2,
+    "price_weight": 0.1,
+    "reputation_weight": 0.6,
+    "queue_weight": 0.1
+  }
+}

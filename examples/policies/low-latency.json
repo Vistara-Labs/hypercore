@@ -1,0 +1,16 @@
+{
+  "name": "low-latency",
+  "description": "Prioritize nodes with lowest latency for latency-sensitive workloads",
+  "mode": "enforce",
+  "rules": {
+    "max_latency_ms": 100,
+    "max_jitter_ms": 20,
+    "max_packet_loss": 1.0
+  },
+  "scoring": {
+    "latency_weight": 0.6,
+    "price_weight": 0.1,
+    "reputation_weight": 0.2,
+    "queue_weight": 0.1
+  }
+}
