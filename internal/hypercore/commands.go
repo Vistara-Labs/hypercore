@@ -239,6 +239,62 @@ func ClusterListCommand(cfg *Config) *cobra.Command {
 	return cmd
 }
 
+func ClusterMetricsCommand(cfg *Config) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "metrics",
+		Short: "display IBRL metrics for cluster nodes",
+		PreRunE: func(c *cobra.Command, _ []string) error {
+			BindCommandToViper(c)
+			return nil
+		},
+		RunE: func(_ *cobra.Command, _ []string) error {
+			conn, err := grpc.NewClient(cfg.GrpcBindAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			if err != nil {
+				return err
+			}
+			defer conn.Close()
+
+			c := pb.NewClusterServiceClient(conn)
+			resp, err := c.List(context.Background(), &pb.VmQueryRequest{})
+			if err != nil {
+				return err
+			}
+
+			// Display metrics in a formatted table
+			log.Info("IBRL Cluster Metrics:")
+			log.Info("====================")
+			log.Info("")
+
+			for _, nodeState := range resp.GetStates() {
+				node := nodeState.GetNode()
+				beacon := nodeState.GetBeacon()
+
+				log.Infof("Node: %s", node.GetId())
+
+				if beacon != nil {
+					log.Infof("  Beacon ID:       %s", beacon.GetBeaconNodeId())
+					log.Infof("  Latency:         %.2f ms", beacon.GetLatencyMs())
+					log.Infof("  Jitter:          %.2f ms", beacon.GetJitterMs())
+					log.Infof("  Packet Loss:     %.2f%%", beacon.GetPacketLoss())
+					log.Infof("  Queue Depth:     %d", beacon.GetQueueDepth())
+					log.Infof("  Price/GB:        $%.4f", beacon.GetPricePerGb())
+					log.Infof("  Reputation:      %s", beacon.GetReputationScore())
+					log.Infof("  Capabilities:    %v", beacon.GetNodeCapabilities())
+				} else {
+					log.Info("  Beacon: Not available")
+				}
+
+				log.Infof("  Workloads:       %d", len(nodeState.GetWorkloads()))
+				log.Info("")
+			}
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
 func ClusterCommand(cfg *Config) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cluster",
@@ -254,7 +310,10 @@ func ClusterCommand(cfg *Config) *cobra.Command {
 
 			repo, err := containerd.NewMicroVMRepository(containerdConfig(cfg))
 			if err != nil {
-				return err
+				// On Mac, containerd is not available - only allow metrics/list commands
+				logger.WithError(err).Warn("containerd not available - cluster node mode disabled")
+				logger.Info("Use 'hypercore cluster metrics' or 'hypercore cluster list' to query existing clusters")
+				return fmt.Errorf("containerd operations not supported on Mac: %w", err)
 			}
 
 			var tlsConfig *cluster.TLSConfig
@@ -266,7 +325,7 @@ func ClusterCommand(cfg *Config) *cobra.Command {
 				}
 			}
 
-			agent, err := cluster.NewAgent(logger, cfg.ClusterBaseURL, cfg.ClusterBindAddr, cfg.RespawnOnNodeFailure, repo, tlsConfig)
+			agent, err := cluster.NewAgent(logger, cfg.ClusterBaseURL, cfg.ClusterBindAddr, cfg.RespawnOnNodeFailure, repo, tlsConfig, cfg.ClusterPolicyFile, cfg.BeaconEndpoint, cfg.BeaconPrice, cfg.BeaconReputation)
 			if err != nil {
 				return err
 			}
@@ -315,6 +374,7 @@ func ClusterCommand(cfg *Config) *cobra.Command {
 	cmd.AddCommand(ClusterStopCommand(cfg))
 	cmd.AddCommand(ClusterLogsCommand(cfg))
 	cmd.AddCommand(ClusterListCommand(cfg))
+	cmd.AddCommand(ClusterMetricsCommand(cfg))
 
 	// TODO remove hac/vmm flags
 	AddCommonFlags(cmd, cfg)

@@ -10,14 +10,19 @@ type Config struct {
 	ClusterBaseURL       string
 	ClusterTLSCert       string
 	ClusterTLSKey        string
+	ClusterPolicyFile    string
 	GrpcBindAddr         string
 	HTTPBindAddr         string
+	BeaconEndpoint       string
+	BeaconPrice          float64
+	BeaconReputation     string
 	ClusterSpawn         struct {
-		CPU      int
-		Memory   int
-		ImageRef string
-		Ports    string
-		Env      []string
+		CPU        int
+		Memory     int
+		ImageRef   string
+		Ports      string
+		Env        []string
+		PolicyFile string
 	}
 	ClusterStop struct {
 		ID string
