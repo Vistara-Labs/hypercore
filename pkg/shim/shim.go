@@ -1,3 +1,6 @@
+// +build !darwin
+// +build linux
+
 package shim
 
 import (
