@@ -1,9 +1,14 @@
+// +build !darwin
+// +build linux
+
 package containerd
 
 import (
 	"context"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -239,7 +244,7 @@ func (r *Repo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_
         "ipMasq": true,
         "ipam": {
           "type": "host-local",
-          "subnet": "192.168.127.0/24",
+          "subnet": "10.88.0.0/16",
           "resolvConf": "/etc/resolv.conf",
           "routes": [
             { "dst": "0.0.0.0/0" }
@@ -259,20 +264,31 @@ func (r *Repo) CreateContainer(ctx context.Context, opts CreateContainerOpts) (_
 		cniPlugins = append(cniPlugins, &libcni.NetworkConfig{Network: &types.NetConf{Type: "tc-redirect-tap"}, Bytes: []byte(tapConfig)})
 	}
 
-	_, err = libcni.NewCNIConfig([]string{"/opt/hypercore/bin", "/opt/cni/bin"}, nil).AddNetworkList(
-		namespaceCtx, &libcni.NetworkConfigList{
-			Name:       "hypercore-cni",
-			CNIVersion: "0.4.0",
-			Plugins:    cniPlugins,
-		}, &libcni.RuntimeConf{
-			ContainerID: containerID,
-			NetNS:       netNs.GetPath(),
-			IfName:      "eth0",
-		},
-	)
+	cniConfig := libcni.NewCNIConfig([]string{"/opt/hypercore/bin", "/opt/cni/bin"}, nil)
+	cniNetworkList := &libcni.NetworkConfigList{
+		Name:       "hypercore-cni",
+		CNIVersion: "0.4.0",
+		Plugins:    cniPlugins,
+	}
+	cniRuntimeConf := &libcni.RuntimeConf{
+		ContainerID: containerID,
+		NetNS:       netNs.GetPath(),
+		IfName:      "eth0",
+	}
+
+	_, err = cniConfig.AddNetworkList(namespaceCtx, cniNetworkList, cniRuntimeConf)
 	if err != nil {
 		return "", fmt.Errorf("failed to add CNI network list: %w", err)
 	}
+
+	// Clean up CNI on error to release IP address
+	defer func() {
+		if retErr != nil {
+			if err := cniConfig.DelNetworkList(namespaceCtx, cniNetworkList, cniRuntimeConf); err != nil {
+				log.Warnf("failed to cleanup CNI on error for container %s: %v", containerID, err)
+			}
+		}
+	}()
 
 	task, err := container.NewTask(namespaceCtx, opts.CioCreator)
 	if err != nil {
@@ -301,6 +317,23 @@ func (r *Repo) DeleteContainer(ctx context.Context, containerID string) (uint32,
 	container, err := r.client.LoadContainer(namespaceCtx, containerID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to load container %s: %w", containerID, err)
+	}
+
+	// Get the container spec to find the network namespace path for CNI cleanup
+	spec, err := container.Spec(namespaceCtx)
+	if err != nil {
+		log.WithContext(ctx).Warnf("failed to get spec for container %s: %v", containerID, err)
+	}
+
+	// Find network namespace path from spec
+	var netNsPath string
+	if spec != nil && spec.Linux != nil {
+		for _, ns := range spec.Linux.Namespaces {
+			if ns.Type == "network" && ns.Path != "" {
+				netNsPath = ns.Path
+				break
+			}
+		}
 	}
 
 	task, err := container.Task(namespaceCtx, nil)
@@ -344,9 +377,113 @@ func (r *Repo) DeleteContainer(ctx context.Context, containerID string) (uint32,
 		return 0, fmt.Errorf("failed to delete task: %w", err)
 	}
 
+	// Clean up CNI network to release IP address
+	if netNsPath != "" {
+		ptpConfig := `
+		{
+			"type": "ptp",
+			"ipMasq": true,
+			"ipam": {
+				"type": "host-local",
+				"subnet": "10.88.0.0/16",
+				"resolvConf": "/etc/resolv.conf",
+				"routes": [
+					{ "dst": "0.0.0.0/0" }
+				]
+			}
+		}
+		`
+		firewallConfig := `{"type": "firewall"}`
+
+		cniPlugins := []*libcni.NetworkConfig{
+			{Network: &types.NetConf{Type: "ptp"}, Bytes: []byte(ptpConfig)},
+			{Network: &types.NetConf{Type: "firewall"}, Bytes: []byte(firewallConfig)},
+		}
+
+		cniConfig := libcni.NewCNIConfig([]string{"/opt/hypercore/bin", "/opt/cni/bin"}, nil)
+		if err := cniConfig.DelNetworkList(
+			namespaceCtx, &libcni.NetworkConfigList{
+				Name:       "hypercore-cni",
+				CNIVersion: "0.4.0",
+				Plugins:    cniPlugins,
+			}, &libcni.RuntimeConf{
+				ContainerID: containerID,
+				NetNS:       netNsPath,
+				IfName:      "eth0",
+			},
+		); err != nil {
+			log.WithContext(ctx).Warnf("failed to delete CNI network for container %s: %v", containerID, err)
+			// Don't fail the delete, just log the warning
+		} else {
+			log.WithContext(ctx).Infof("released CNI network resources for container %s", containerID)
+		}
+	} else {
+		log.WithContext(ctx).Warnf("no network namespace path found for container %s, skipping CNI cleanup", containerID)
+	}
+
 	if err := container.Delete(namespaceCtx, containerd.WithSnapshotCleanup); err != nil {
 		return 0, fmt.Errorf("failed to delete container %s: %w", containerID, err)
 	}
 
 	return code, nil
+}
+
+// GarbageCollectCNI cleans up orphaned CNI IP allocations that don't have running containers.
+// This should be called periodically to handle cases where containers crashed without cleanup.
+func (r *Repo) GarbageCollectCNI(ctx context.Context) (int, error) {
+	cniDataDir := "/var/lib/cni/networks/hypercore-cni"
+
+	// Get all running container IDs
+	namespaceCtx := namespaces.WithNamespace(ctx, r.config.ContainerNamespace)
+	tasks, err := r.client.TaskService().List(namespaceCtx, &tasks.ListTasksRequest{})
+	if err != nil {
+		return 0, fmt.Errorf("failed to list tasks: %w", err)
+	}
+
+	runningContainers := make(map[string]bool)
+	for _, task := range tasks.GetTasks() {
+		runningContainers[task.GetID()] = true
+	}
+
+	// Scan CNI data directory for IP allocations
+	entries, err := os.ReadDir(cniDataDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil // No CNI data, nothing to clean
+		}
+		return 0, fmt.Errorf("failed to read CNI data dir: %w", err)
+	}
+
+	cleaned := 0
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Name() == "last_reserved_ip.0" || entry.Name() == "lock" {
+			continue
+		}
+
+		// Each file is named by IP and contains the container ID
+		ipFile := filepath.Join(cniDataDir, entry.Name())
+		data, err := os.ReadFile(ipFile)
+		if err != nil {
+			continue
+		}
+
+		// File format: container_id\nifname\n...
+		lines := strings.Split(string(data), "\n")
+		if len(lines) == 0 {
+			continue
+		}
+		containerID := strings.TrimSpace(lines[0])
+
+		// If container is not running, remove the allocation
+		if !runningContainers[containerID] {
+			if err := os.Remove(ipFile); err != nil {
+				log.Warnf("failed to remove orphaned CNI allocation %s: %v", entry.Name(), err)
+			} else {
+				log.Infof("cleaned orphaned CNI IP allocation: %s (container: %s)", entry.Name(), containerID)
+				cleaned++
+			}
+		}
+	}
+
+	return cleaned, nil
 }

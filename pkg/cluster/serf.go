@@ -811,8 +811,20 @@ func (a *Agent) LogsRequest(id string) (*pb.VmLogsResponse, error) {
 //nolint:gocognit
 func (a *Agent) monitorWorkloads() {
 	ticker := time.NewTicker(WorkloadBroadcastPeriod)
+	gcCounter := 0
 	for range ticker.C {
 		ctx := a.ctrRepo.GetContext(context.Background())
+
+		// Run CNI garbage collection every 10 iterations (~5 minutes with 30s period)
+		gcCounter++
+		if gcCounter >= 10 {
+			gcCounter = 0
+			if cleaned, err := a.ctrRepo.GarbageCollectCNI(ctx); err != nil {
+				a.logger.WithError(err).Warn("CNI garbage collection failed")
+			} else if cleaned > 0 {
+				a.logger.Infof("CNI garbage collection cleaned %d orphaned IP allocations", cleaned)
+			}
+		}
 
 		tasks, err := a.ctrRepo.GetTasks(ctx)
 		if err != nil {
