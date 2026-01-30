@@ -21,6 +21,9 @@ if [[ ! "$GATEWAY_PORT" =~ ^[0-9]+$ ]]; then
   GATEWAY_PORT=18789
 fi
 
+# Default model (can be overridden via env)
+CLAWDBOT_MODEL="${CLAWDBOT_MODEL:-anthropic/claude-sonnet-4-20250514}"
+
 # Create config directory
 mkdir -p ~/.clawdbot
 
@@ -39,7 +42,7 @@ cat > ~/.clawdbot/clawdbot.json << EOF
   "agents": {
     "defaults": {
       "model": {
-        "primary": "anthropic/claude-sonnet-4-20250514"
+        "primary": "${CLAWDBOT_MODEL}"
       },
       "workspace": "/home/clawdbot/workspace"
     }

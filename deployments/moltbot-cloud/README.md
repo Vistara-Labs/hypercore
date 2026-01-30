@@ -54,6 +54,7 @@ hypercore cluster spawn \
 | `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key |
 | `CLAWDBOT_GATEWAY_TOKEN` | No | Gateway auth token (auto-generated if not set) |
 | `CLAWDBOT_PORT` | No | Gateway port (default: 18789) |
+| `CLAWDBOT_MODEL` | No | Default model (default: `anthropic/claude-sonnet-4-20250514`) |
 
 ## Health Check
 
