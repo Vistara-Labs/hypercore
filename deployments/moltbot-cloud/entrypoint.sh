@@ -24,8 +24,8 @@ fi
 # Create config directory
 mkdir -p ~/.clawdbot
 
-# Write config to moltbot.json (the config file the gateway reads)
-cat > ~/.clawdbot/moltbot.json << EOF
+# Write config to clawdbot.json (the config file the gateway reads)
+cat > ~/.clawdbot/clawdbot.json << EOF
 {
   "gateway": {
     "port": ${GATEWAY_PORT},
@@ -34,17 +34,6 @@ cat > ~/.clawdbot/moltbot.json << EOF
     "auth": {
       "mode": "token",
       "token": "${GATEWAY_TOKEN}"
-    },
-    "controlUi": {
-      "dangerouslyDisableDeviceAuth": true
-    }
-  },
-  "auth": {
-    "profiles": {
-      "anthropic:default": {
-        "provider": "anthropic",
-        "mode": "api_key"
-      }
     }
   },
   "agents": {
@@ -122,5 +111,6 @@ else
   echo "WARNING: ANTHROPIC_API_KEY is NOT set"
 fi
 
-# Start the gateway
-exec moltbot gateway run --bind lan --port "${GATEWAY_PORT}"
+# Start the gateway (clawdbot is the actual binary name)
+# --allow-unconfigured is needed since we're writing config directly instead of using `clawdbot setup`
+exec clawdbot gateway run --bind lan --port "${GATEWAY_PORT}" --allow-unconfigured --token "${GATEWAY_TOKEN}"

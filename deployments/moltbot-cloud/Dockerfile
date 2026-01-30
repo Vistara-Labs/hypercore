@@ -50,15 +50,19 @@ ENV HOME=/home/clawdbot
 RUN mkdir -p /home/clawdbot/.clawdbot
 
 # Copy entrypoint script
-COPY --chown=clawdbot:clawdbot images/clawdbot-vm/entrypoint.sh /opt/entrypoint.sh
+# When building from clawdbot repo root with -f pointing to this Dockerfile,
+# the entrypoint.sh should be copied to the repo root or specified path first.
+# Example: cp hypercore/deployments/moltbot-cloud/entrypoint.sh ./entrypoint.sh
+#          docker build -f path/to/Dockerfile -t clawdbot-vm .
+COPY --chown=clawdbot:clawdbot entrypoint.sh /opt/entrypoint.sh
 RUN chmod +x /opt/entrypoint.sh
 
 # Expose gateway port
 EXPOSE 18789
 
-# Health check
+# Health check - verify gateway is serving the Control UI
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:18789/health || exit 1
+    CMD curl -sf http://localhost:18789/ | grep -q "clawdbot-app" || exit 1
 
 # Default environment
 ENV CLAWDBOT_PROVIDER=anthropic
