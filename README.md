@@ -21,7 +21,7 @@ Vistara Hypercore is an advanced Hypervisor Abstraction Layer designed to manage
 Clone the repository:
 
 ```bash
-git clone https://github.com/vistara-labs/hypercore.git
+git clone https://github.com/vistara-labs/hypercore
 ```
 
 Build the unified hypercore binary for spawning and managing the lifecycle of MicroVMs. Depending on the binary name it either runs the hypercore CLI, or the containerd shim. The shim must be present in `$PATH` so we can symlink it to `/usr/local/bin`:
